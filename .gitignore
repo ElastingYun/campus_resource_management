@@ -1,0 +1,35 @@
+# Local environment files; keep safe templates versioned.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Vue / Node.js dependencies and generated output.
+node_modules/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Python environments, bytecode and tool caches.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local database storage and logs.
+pgdata/
+postgres-data/
+*.log
+
+# OS and editor temporary files.
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
