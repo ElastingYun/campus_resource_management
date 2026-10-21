@@ -323,8 +323,10 @@ def install(
 
 
 def create_app(
-    *, auth: AuthService, approval: ApprovalService, audit: AuditService
+    *, auth: AuthService, approval: ApprovalService, audit: AuditService, lifespan=None
 ) -> FastAPI:
-    app = FastAPI(title="Classroom approval and identity", version="0.1.0")
+    app = FastAPI(
+        title="Classroom approval and identity", version="0.1.0", lifespan=lifespan
+    )
     install(app, auth=auth, approval=approval, audit=audit)
     return app
