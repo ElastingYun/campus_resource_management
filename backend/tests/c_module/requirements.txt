@@ -1,0 +1,4 @@
+-r ../../app/modules/m2_approval/requirements.txt
+pytest==9.1.1
+pgserver==0.1.4
+ruff==0.17.1
