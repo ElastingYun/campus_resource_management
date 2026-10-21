@@ -42,6 +42,18 @@ class Workflow:
             raise ValueError(
                 "A versioned, nonempty workflow must be supplied by the host"
             )
+        if not all(isinstance(step, Step) for step in self.steps):
+            raise TypeError("Workflow steps must be validated Step objects")
+        flags = (
+            self.allow_self_review,
+            self.deadline_inclusive,
+            self.require_rejection_reason,
+            self.allow_revocation,
+        )
+        if any(type(flag) is not bool for flag in flags):
+            raise TypeError(
+                "Workflow flags must be booleans, not truthy configuration strings"
+            )
 
 
 def clean_text(value: str, name: str, maximum: int, *, required: bool = True) -> str:

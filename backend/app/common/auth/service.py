@@ -74,7 +74,8 @@ class AuthService:
     def login(self, username: str, password: str, *, client_key: str, request_id: str):
         now = aware(self.clock())
         # Account and client buckets bound guessing without retaining raw addresses.
-        keys = sorted(["account:" + digest(username), "client:" + digest(client_key)])
+        # Gate the client before allocating a bucket for an arbitrary username.
+        keys = ["client:" + digest(client_key), "account:" + digest(username)]
         failure = None
         result = None
         with self.database.transaction() as conn:
@@ -92,17 +93,17 @@ class AuthService:
                        WHERE key=%s AND started_at <= %s""",
                     (now, key, now - self.settings.attempt_window),
                 )
-            buckets = conn.execute(
-                "SELECT attempts FROM c_login_buckets WHERE key=ANY(%s)",
-                (keys,),
-            ).fetchall()
-            if any(row["attempts"] >= self.settings.max_attempts for row in buckets):
-                failure = ServiceError(429, "LOGIN_RATE_LIMIT", "登录尝试过于频繁")
-            else:
+                bucket = conn.execute(
+                    "SELECT attempts FROM c_login_buckets WHERE key=%s", (key,)
+                ).fetchone()
+                if bucket["attempts"] >= self.settings.max_attempts:
+                    failure = ServiceError(429, "LOGIN_RATE_LIMIT", "登录尝试过于频繁")
+                    break
                 conn.execute(
-                    "UPDATE c_login_buckets SET attempts=attempts+1 WHERE key=ANY(%s)",
-                    (keys,),
+                    "UPDATE c_login_buckets SET attempts=attempts+1 WHERE key=%s",
+                    (key,),
                 )
+            if failure is None:
                 user = conn.execute(
                     "SELECT * FROM c_users WHERE username=%s", (username,)
                 ).fetchone()
