@@ -15,11 +15,14 @@ def migrate(database: Database) -> None:
             source = path.read_text()
             checksum = hashlib.sha256(source.encode()).hexdigest()
             previous = conn.execute(
-                "SELECT checksum FROM c_schema_migrations WHERE name=%s", (path.name,),
+                "SELECT checksum FROM c_schema_migrations WHERE name=%s",
+                (path.name,),
             ).fetchone()
             if previous:
                 if previous["checksum"] != checksum:
                     raise RuntimeError("Applied migration checksum changed")
                 continue
             conn.execute(source)
-            conn.execute("INSERT INTO c_schema_migrations VALUES (%s,%s)", (path.name, checksum))
+            conn.execute(
+                "INSERT INTO c_schema_migrations VALUES (%s,%s)", (path.name, checksum)
+            )

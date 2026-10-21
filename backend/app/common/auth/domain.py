@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 
@@ -10,13 +10,13 @@ class ServiceError(Exception):
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ServiceError(422, "TIMEZONE_REQUIRED", "时间必须带时区")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 @dataclass(frozen=True)

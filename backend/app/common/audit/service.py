@@ -10,25 +10,52 @@ class AuditService:
     def __init__(self, database: Database):
         self.database = database
 
-    def record(self, conn, *, actor: UUID | None, action: str, target: str,
-               result: str, now: datetime, request_id: str,
-               room_id: str | None = None, before: str | None = None,
-               after: str | None = None) -> None:
+    def record(
+        self,
+        conn,
+        *,
+        actor: UUID | None,
+        action: str,
+        target: str,
+        result: str,
+        now: datetime,
+        request_id: str,
+        room_id: str | None = None,
+        before: str | None = None,
+        after: str | None = None,
+    ) -> None:
         # Only explicit metadata is accepted. Never accept arbitrary request bodies.
         conn.execute(
             """INSERT INTO c_audit_events
                (id, actor_id, action, target, result, occurred_at, request_id,
                 room_id, changes) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (uuid4(), actor, action, target, result, now, request_id, room_id,
-             Jsonb({"before": before, "after": after})),
+            (
+                uuid4(),
+                actor,
+                action,
+                target,
+                result,
+                now,
+                request_id,
+                room_id,
+                Jsonb({"before": before, "after": after}),
+            ),
         )
 
-    def failure(self, *, actor: UUID | None, code: str,
-                request_id: str, now: datetime) -> None:
+    def failure(
+        self, *, actor: UUID | None, code: str, request_id: str, now: datetime
+    ) -> None:
         # This separate transaction runs after the business transaction rolled back.
         with self.database.transaction() as conn:
-            self.record(conn, actor=actor, action="request.denied", target="request",
-                        result=code, now=now, request_id=request_id)
+            self.record(
+                conn,
+                actor=actor,
+                action="request.denied",
+                target="request",
+                result=code,
+                now=now,
+                request_id=request_id,
+            )
 
     def list_events(self, principal: Principal, *, limit: int, offset: int):
         principal.require("audit.read")

@@ -1,8 +1,8 @@
 """Small PostgreSQL transaction boundary shared only by C's components."""
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator
 
 import psycopg
 from psycopg.rows import dict_row
