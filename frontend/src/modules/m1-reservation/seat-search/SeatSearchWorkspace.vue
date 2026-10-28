@@ -6,6 +6,7 @@ import { createUnconfiguredBookingGateway } from "../booking/gateway";
 import { createPrototypeBookingGateway } from "../booking/prototype";
 import { BookingError, selectBooking } from "../booking/models";
 import type { BookingGateway } from "../booking/models";
+import type { BookingSession } from "../booking/session";
 import {
   businessDate,
   outletLabels,
@@ -24,6 +25,7 @@ import type {
 const props = defineProps<{
   gateway: SeatSearchGateway;
   bookingGateway?: BookingGateway;
+  bookingSession?: BookingSession;
 }>();
 const emit = defineEmits<{ bookingPending: [pending: boolean] }>();
 const requestedBooking =
@@ -31,18 +33,30 @@ const requestedBooking =
   (props.gateway.mode === "prototype"
     ? createPrototypeBookingGateway()
     : createUnconfiguredBookingGateway());
+const retainedSession =
+  props.bookingSession?.mode === props.gateway.mode
+    ? props.bookingSession
+    : undefined;
 const bookingGateway =
-  requestedBooking.mode === props.gateway.mode
+  !props.bookingSession &&
+  requestedBooking.mode === "prototype" &&
+  props.gateway.mode === "prototype"
     ? requestedBooking
     : createUnconfiguredBookingGateway();
-const booking = createBookingFlow(bookingGateway);
+const bookingMode = retainedSession?.mode ?? bookingGateway.mode;
+const localBooking = createBookingFlow(bookingGateway);
+const booking = computed(() => retainedSession?.current ?? localBooking);
 watch(
-  () => booking.pending,
+  () => retainedSession?.pending ?? booking.value.pending,
   (pending) => emit("bookingPending", pending),
   { immediate: true, flush: "sync" },
 );
 const leavingWarning = ref(false);
-const canBook = bookingGateway.mode !== "unconfigured";
+const canBook = computed(
+  () =>
+    bookingMode !== "unconfigured" &&
+    (!retainedSession || retainedSession.current !== null),
+);
 const settings = ref<SearchSettings>();
 const loadingSettings = ref(false),
   searching = ref(false),
@@ -71,7 +85,7 @@ const disabled = computed(
     props.gateway.mode === "unconfigured" ||
     !settings.value ||
     loadingSettings.value ||
-    booking.active,
+    booking.value.active,
 );
 const availableCount = computed(
   () =>
@@ -79,7 +93,7 @@ const availableCount = computed(
     0,
 );
 function invalidate() {
-  if (booking.active) return;
+  if (booking.value.active) return;
   generation++;
   searchController?.abort();
   searching.value = false;
@@ -87,9 +101,9 @@ function invalidate() {
   error.value = "";
 }
 function chooseSeat(seat: SearchSeat) {
-  if (!result.value || booking.active || !canBook) return;
+  if (!result.value || booking.value.active || !canBook.value) return;
   try {
-    if (!booking.open(selectBooking(seat, result.value)))
+    if (!booking.value.open(selectBooking(seat, result.value)))
       error.value = "请先登录后预约。";
   } catch (cause) {
     error.value =
@@ -97,16 +111,20 @@ function chooseSeat(seat: SearchSeat) {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (booking.pending) {
+  if (retainedSession?.pending ?? booking.value.pending) {
     event.preventDefault();
     event.returnValue = "";
   }
 }
 function guardNavigation(event: MouseEvent) {
   if (
-    booking.pending &&
+    booking.value.pending &&
     event.target instanceof Element &&
-    event.target.closest("a[href]")
+    event.target.closest("a[href]") &&
+    !(
+      retainedSession &&
+      event.target.closest("a[href]")!.getAttribute("href")?.startsWith("#")
+    )
   ) {
     event.preventDefault();
     leavingWarning.value = true;
@@ -193,13 +211,31 @@ function formatTime(value: string) {
     timeZoneName: "shortOffset",
   }).format(new Date(value));
 }
+watch(
+  () => retainedSession?.currentActorId,
+  (actor) => {
+    generation++;
+    settingsGeneration++;
+    searchController?.abort();
+    settingsController?.abort();
+    searching.value = false;
+    loadingSettings.value = false;
+    result.value = undefined;
+    rooms.value = [];
+    settings.value = undefined;
+    error.value = "";
+    if (actor) void loadSettings();
+  },
+  { flush: "sync" },
+);
 onMounted(() => {
   window.addEventListener("beforeunload", beforeUnload);
   if (props.gateway.mode !== "unconfigured") void loadSettings();
 });
 onUnmounted(() => {
   window.removeEventListener("beforeunload", beforeUnload);
-  booking.dispose();
+  // The application-owned session, including requests in flight, survives route destruction.
+  localBooking.dispose();
   generation++;
   settingsGeneration++;
   searchController?.abort();
@@ -322,7 +358,8 @@ onUnmounted(() => {
       v-if="gateway.businessTimeZone"
       :flow="booking"
       :time-zone="gateway.businessTimeZone"
-      :prototype="bookingGateway.mode === 'prototype'"
+      :prototype="bookingMode === 'prototype'"
+      :retained="!!retainedSession"
       @closed="closeBooking"
     />
     <p
@@ -365,7 +402,7 @@ onUnmounted(() => {
         </div>
         <span>{{
           canBook
-            ? bookingGateway.mode === "prototype"
+            ? bookingMode === "prototype"
               ? "合成预约演示"
               : "选择可用座位继续预约"
             : "仅查询 · 预约提交待接入"

@@ -6,6 +6,7 @@ const props = defineProps<{
   flow: BookingFlow;
   timeZone: string;
   prototype: boolean;
+  retained?: boolean;
 }>();
 const emit = defineEmits<{ closed: [] }>();
 const receipt = computed(() => props.flow.visibleReceipt);
@@ -99,7 +100,12 @@ function close() {
       }}
     </p>
     <p v-if="flow.pending" class="hint">
-      请先核对结果再离开。刷新会丢失本页恢复信息；离开后请使用原账号核对服务端预约记录，必要时联系管理员。
+      {{
+        retained
+          ? "应用内切页会保留原请求；刷新前请先核对结果。"
+          : "请先核对结果再离开，刷新会丢失本页恢复信息。"
+      }}
+      离开应用后请使用原账号核对服务端预约记录，必要时联系管理员。
     </p>
     <div class="booking-actions">
       <button
