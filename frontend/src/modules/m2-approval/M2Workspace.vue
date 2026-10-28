@@ -70,6 +70,8 @@ const syncPending = () => {
 };
 async function reload() {
   if (loading.value || writing.value) return;
+  const previousId = selected.value?.id;
+  const previousVersion = selected.value?.version;
   loading.value = true;
   loaded.value = false;
   error.value = "";
@@ -87,6 +89,11 @@ async function reload() {
     roomWarning.value = data.roomWarning ?? "";
     pagination.value = data.pagination;
     loaded.value = true;
+    if (
+      selected.value?.id === previousId &&
+      selected.value?.version === previousVersion
+    )
+      await refreshDetail();
   } catch (cause) {
     rooms.value = [];
     applications.value = [];
@@ -117,7 +124,7 @@ async function refreshDetail() {
     if (request === detailRequest) detailLoading.value = false;
   }
 }
-watch(() => selected.value?.id, refreshDetail);
+watch([() => selected.value?.id, () => selected.value?.version], refreshDetail);
 function acceptRecord(record: ApplicationView) {
   applications.value = [
     record,

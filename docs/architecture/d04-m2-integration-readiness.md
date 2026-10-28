@@ -42,4 +42,4 @@ HTTP 传输仍限制同源路径与重定向，清理超时/取消监听；只�
 
 教室引用验证使用显式标注的 CI 合成资源 HTTP 服务，M1 关闭。测试必须验证最终审批通过仍 effective=false；该结果只计为 D↔C 接入，不计为真实 B/A/E 联调。CI 不允许因缺少服务 origin 而静默跳过。本机缺少 C 服务/PostgreSQL 时该用例为 NOT RUN，不能记为通过。
 
-首次真实 run 结果以 PR #17 Checks 和后续验证记录为准。本轮没有修改 C/B/A 业务代码、schema 或权限配置，没有生产发布。后续仍需 #24 的真实资源接入、[#23](https://github.com/ElastingYun/campus_resource_management/issues/23) 的 A/C 来源协议与网络验收，以及相关 owner 的非作者 Review。
+真实网络 run 40691014657 与工程 CI 40691014677 已在前端 670bec2 通过；失败、修正及后续刷新回归证据见 [D04 验证记录](../testing/d04-c-v1-network.md)。本轮没有修改 C/B/A 业务代码、schema 或权限配置，没有生产发布。后续仍需 #24 的真实资源接入、[#23](https://github.com/ElastingYun/campus_resource_management/issues/23) 的 A/C 来源协议与网络验收，以及相关 owner 的非作者 Review。
