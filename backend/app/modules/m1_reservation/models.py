@@ -88,3 +88,37 @@ class SeatStateEvent(Base):
     end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # NULL: open-ended
     actor_id: Mapped[str] = mapped_column(String(64))
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class Violation(Base):
+    """One no-show record per reservation (the unique key makes job retries harmless)."""
+
+    __tablename__ = "m1_violations"
+    __table_args__ = (Index("ix_m1_violations_user", "user_id", "occurred_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    reservation_id: Mapped[int] = mapped_column(ForeignKey("m1_reservations.id"), unique=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(String(32))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class NotificationOutbox(Base):
+    """Notifications M1 wants sent. E's notification service delivers them (not built yet).
+
+    One row per (reservation, kind): reruns of the job never notify twice.
+    """
+
+    __tablename__ = "m1_notification_outbox"
+    __table_args__ = (
+        UniqueConstraint("reservation_id", "kind", name="uq_m1_notification_outbox_reservation_kind"),
+        Index("ix_m1_notification_outbox_pending", "dispatched_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    reservation_id: Mapped[int] = mapped_column(ForeignKey("m1_reservations.id"))
+    user_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

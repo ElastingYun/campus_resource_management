@@ -73,3 +73,10 @@ class RoomCodeOut(BaseModel):
     date: str
     code: str
     valid_until: datetime
+
+
+class ViolationOut(BaseModel):
+    id: int
+    reservation_id: int
+    reason: str
+    occurred_at: datetime

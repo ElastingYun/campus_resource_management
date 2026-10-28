@@ -6,7 +6,7 @@ from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.common.resources.models import Room, Seat
-from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation
+from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation, Violation
 from app.modules.m1_reservation.timeslots import Slot
 
 # Advisory lock namespaces (first key of the two-int form).
@@ -100,3 +100,8 @@ def reservation_with_place(session: Session, reservation_id: int) -> tuple[Reser
         .where(Reservation.id == reservation_id)
     )
     return session.execute(query).tuples().first()
+
+
+def user_violations(session: Session, user_id: str) -> list[Violation]:
+    query = select(Violation).where(Violation.user_id == user_id).order_by(Violation.occurred_at.desc())
+    return list(session.scalars(query))

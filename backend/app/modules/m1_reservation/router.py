@@ -28,6 +28,7 @@ from app.modules.m1_reservation.schemas import (
     RoomCodeOut,
     SeatAvailabilityOut,
     SettingsOut,
+    ViolationOut,
 )
 from app.modules.m1_reservation.settings import as_dict, load_settings
 from app.modules.m1_reservation.timeslots import check_booking_window, make_slot
@@ -211,6 +212,18 @@ def room_checkin_code(
     return RoomCodeOut(
         room_id=result.room_id, date=result.day.isoformat(), code=result.code, valid_until=result.valid_until
     )
+
+
+@router.get("/violations/me", response_model=list[ViolationOut])
+def my_violations(
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> list[ViolationOut]:
+    return [
+        ViolationOut(id=v.id, reservation_id=v.reservation_id, reason=v.reason, occurred_at=v.occurred_at.astimezone(tz))
+        for v in repository.user_violations(session, user.id)
+    ]
 
 
 @router.get("/settings", response_model=SettingsOut)
