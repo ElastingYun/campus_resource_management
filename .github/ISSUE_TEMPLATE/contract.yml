@@ -1,0 +1,54 @@
+name: 接口或跨模块决策
+description: 按 owner 对齐请求、响应、权限和未决业务规则
+title: '[接口对齐] '
+body:
+- type: textarea
+  id: parties
+  attributes:
+    label: 调用场景与 owner
+    description: 列出调用方、提供方和相关成员；未知账号不猜测。
+    placeholder: '调用方：
+
+      提供方：
+
+      关联需求 / Issue：'
+  validations:
+    required: true
+- type: textarea
+  id: questions
+  attributes:
+    label: 逐项待确认问题
+    description: 使用问题编号，区分已确认事实、候选方案与待决项。
+    placeholder: 'Q-01：
+
+      Q-02：'
+  validations:
+    required: true
+- type: textarea
+  id: contract
+  attributes:
+    label: 所需契约与示例
+    description: 覆盖输入输出、身份权限、时间、错误、重复请求与结果未知。
+    placeholder: '方法 / 路径（若已确认）：
+
+      成功 / 失败示例（合成数据）：
+
+      权限与数据可见范围：
+
+      幂等和超时结果查询：'
+  validations:
+    required: true
+- type: textarea
+  id: decision
+  attributes:
+    label: 决策记录与启动条件
+    description: 谁确认了什么、日期、链接；未回复不等于批准。
+    placeholder: '确认记录：
+
+      仍待决：
+
+      允许启动的范围：
+
+      后续契约文档 / 实现 Issue：'
+  validations:
+    required: true

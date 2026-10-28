@@ -1,19 +1,43 @@
 from fastapi.testclient import TestClient
 
-from app.config import AppConfig
+from app.config import Settings
 from app.main import create_app
 
 
-def test_health_reports_database_ok(client):
-    resp = client.get("/api/health")
-    assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "database": "ok"}
+def test_live_and_missing_database_configuration(monkeypatch):
+    for key in ("HOST", "PORT", "NAME", "USER", "PASSWORD"):
+        monkeypatch.delenv(f"CAMPUS_DB_{key}", raising=False)
+    application = create_app(Settings(_env_file=None))
+    with TestClient(application) as client:
+        assert client.get("/health/live").json() == {"status": "alive", "scope": "bootstrap"}
+        response = client.get("/health/ready")
+        assert response.status_code == 503
+        assert response.json()["database"] == "unconfigured"
+        assert client.get("/api/v1/approvals").status_code == 404
 
 
-def test_health_reports_unreachable_database_as_503():
-    # Port 1 on loopback refuses connections, so the probe must fail.
-    app = create_app(AppConfig(database_url="postgresql+psycopg://x:y@127.0.0.1:1/none"))
-    with TestClient(app) as c:
-        resp = c.get("/api/health")
-    assert resp.status_code == 503
-    assert resp.json()["database"] == "unavailable"
+def test_database_connection_failure_does_not_break_liveness_or_leak_credentials():
+    secret = "synthetic-secret-do-not-expose"
+    application = create_app(
+        Settings(
+            _env_file=None,
+            db_host="127.0.0.1",
+            db_port=1,
+            db_name="campus_test",
+            db_user="synthetic_user",
+            db_password=secret,
+        )
+    )
+    with TestClient(application) as client:
+        response = client.get("/health/ready")
+        assert response.status_code == 503
+        assert response.json() == {
+            "status": "not_ready",
+            "database": "unavailable",
+            "scope": "bootstrap",
+        }
+        assert secret not in response.text
+        assert "synthetic_user" not in response.text
+        assert "127.0.0.1" not in response.text
+        assert client.get("/health/live").status_code == 200
+    assert application.state.engine.pool.checkedout() == 0

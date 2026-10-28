@@ -1,35 +1,22 @@
-"""Process configuration read from environment variables.
+from pathlib import Path
 
-Provisional scaffold written for M1 development (scaffold owner: D). It is kept
-dependency-free so the shared scaffold can replace the loader later.
-"""
-
-import os
-from dataclasses import dataclass
-
-AUTH_MODES = ("disabled", "dev-headers")
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass(frozen=True)
-class AppConfig:
-    database_url: str
-    business_timezone: str = "Asia/Shanghai"
-    # "disabled": every protected endpoint answers 401 until C's auth lands.
-    # "dev-headers": trust X-Dev-* headers; local development and tests only.
-    auth_mode: str = "disabled"
-    checkin_code_secret: str = ""
-
-    def __post_init__(self) -> None:
-        if self.auth_mode not in AUTH_MODES:
-            raise ValueError(f"AUTH_MODE must be one of {AUTH_MODES}, got {self.auth_mode!r}")
-
-
-def load_config() -> AppConfig:
-    return AppConfig(
-        database_url=os.environ.get(
-            "DATABASE_URL", "postgresql+psycopg://campus:campus@127.0.0.1:5432/campus"
-        ),
-        business_timezone=os.environ.get("BUSINESS_TIMEZONE", "Asia/Shanghai"),
-        auth_mode=os.environ.get("AUTH_MODE", "disabled"),
-        checkin_code_secret=os.environ.get("M1_CHECKIN_CODE_SECRET", ""),
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="CAMPUS_",
+        env_file=Path(__file__).resolve().parents[2] / ".env",
+        extra="ignore",
     )
+
+    db_host: str | None = Field(default=None, min_length=1)
+    db_port: int = Field(default=5432, ge=1, le=65535)
+    db_name: str = Field(default="campus", min_length=1)
+    db_user: str = Field(default="campus", min_length=1)
+    db_password: SecretStr | None = Field(default=None, min_length=1)
+
+    @property
+    def database_configured(self) -> bool:
+        return self.db_host is not None and self.db_password is not None
