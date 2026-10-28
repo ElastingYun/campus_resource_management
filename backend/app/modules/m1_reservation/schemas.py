@@ -84,9 +84,9 @@ class ViolationOut(BaseModel):
 
 class RestrictionApply(BaseModel):
     room_id: int
-    seat_id: int | None = None  # omit to restrict the whole room
+    seat_id: int | None = None  # must be omitted/null; service rejects seat-level scope
     start_at: datetime
-    end_at: datetime | None = None  # omit for "until released" (repairs only)
+    end_at: datetime | None = None  # required for M2; must be omitted/null for M3
     note: str = Field(default="", max_length=200)
 
 

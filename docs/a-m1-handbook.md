@@ -134,11 +134,10 @@ CurrentUser(id: str, department_id: str | None, permissions: frozenset[str])
 ```
 工单进入“维修中” → PUT  /api/v1/m1/restrictions/m3_repair/{工单号}   {room_id, start_at}   （不传 end_at 表示直到解除）
 验收通过         → POST /api/v1/m1/restrictions/m3_repair/{工单号}/release  {"reason": "accepted"}
-工单取消         → 同上，reason 写 "cancelled"
 ```
 
-- 只有**验收通过**才解除，“维修完成”时不要调用 release。
-- 只坏了一个座位时，可以加上 `seat_id`，只下架这一个座位。
+- 只有**验收通过**才解除；“维修完成”或“工单取消”不能解除，非 `accepted` 原因会被 M1 拒绝。M3 负责核实验收事实。
+- 按负责人 2026-10-28 确认的整室下架策略，即使只坏一个座位，也下架该教室全部座位。不要传 `seat_id` 或 `end_at`，否则返回 422；维修限制不会按时间自动解除。
 - 同一教室的多张工单互不影响，只有全部解除后座位才会恢复。
 - 维修期间学生没来签到，M1 暂定**不记违约**（D-08），请参与确认。
 

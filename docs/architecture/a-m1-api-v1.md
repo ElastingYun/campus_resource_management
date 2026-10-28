@@ -79,7 +79,8 @@ source_id:   来源模块的业务 ID（审批单号/工单号），1–64 位 [
 {"room_id": 1, "seat_id": null, "start_at": "2026-11-03T10:00", "end_at": "2026-11-03T12:00", "note": "学术报告"}
 ```
 
-- `seat_id` 省略表示整间教室。`end_at` 省略表示“直到解除”，**只允许 `m3_repair`**；M2 审批必须给出结束时间。
+- M2 审批占用和 M3 维修下架均作用于**整间教室**，`seat_id` 必须省略或为 `null`；传入具体座位返回 422 `room_scope_required`。
+- M3 的 `end_at` 必须省略或为 `null`，持续到验收通过后解除；指定结束时间返回 422 `repair_end_forbidden`。M2 审批必须给出结束时间。
 - 首次写入返回 **201**；用同一来源、相同参数重复调用返回 **200** 和原记录，因此超时后可以放心重试。
 - 同一来源但参数不同返回 409 `restriction_conflict`；已解除的来源不能再次生效，返回 409 `restriction_released`，需要换新的业务 ID。
 - 响应中的 `affected_reservation_ids` 列出与该限制重叠、仍然有效的个人预约。**M1 不会自动取消它们**：如何处理（拒绝审批、协调、取消并通知）尚待团队决定，见[暂定决策](../requirements/a-m1-v1-baseline.md#3-v1-的暂定决策待确认) D-07。
@@ -92,7 +93,7 @@ POST /api/v1/m1/restrictions/{source_type}/{source_id}/release
 {"reason": "accepted"}
 ```
 
-- M2 在驳回、撤销或超时撤销时调用，M3 在**验收通过**时调用（维修完成但未验收时不要调用）。
+- M2 在驳回、撤销或超时撤销时调用。M3 仅在**验收通过**时由有权限的 M3 调用方传入 `reason: accepted`；其他原因（包括 `completed`、`cancelled`）返回 422 `repair_acceptance_required`，不改变下架状态。M3 负责核实真实验收结果，M1 校验调用方权限和解除原因。
 - 重复解除返回 200，不会重复记录；未知来源返回 404 `restriction_not_found`。
 - 解除只影响这一个来源。同一教室上还有其他审批、其他工单或个人预约时，座位仍然不可预约。
 

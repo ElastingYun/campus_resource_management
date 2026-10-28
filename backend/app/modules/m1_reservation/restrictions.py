@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.common.resources.models import Room, Seat
+from app.common.resources.models import Room
 from app.modules.m1_reservation import events, repository
 from app.modules.m1_reservation.errors import M1Error
 from app.modules.m1_reservation.identity import CurrentUser
@@ -57,6 +57,10 @@ def apply(
 ) -> tuple[SeatRestriction, bool, list[int]]:
     """Returns (restriction, created, ids of active reservations it overlaps)."""
     _authorize(user, source_type, source_id)
+    if seat_id is not None:
+        raise M1Error(422, "room_scope_required", "审批占用和维修下架必须作用于整间教室")
+    if source_type == "m3_repair" and end_at is not None:
+        raise M1Error(422, "repair_end_forbidden", "维修下架必须持续至验收通过，不可按结束时间自动恢复")
     start = to_business_time(start_at, tz)
     end = to_business_time(end_at, tz) if end_at is not None else None
     if end is None and source_type == "m2_approval":
@@ -65,10 +69,6 @@ def apply(
         raise M1Error(422, "invalid_interval", "结束时间必须晚于开始时间")
     if session.get(Room, room_id) is None:
         raise M1Error(404, "room_not_found", "自习室不存在")
-    if seat_id is not None:
-        seat = session.get(Seat, seat_id)
-        if seat is None or seat.room_id != room_id:
-            raise M1Error(422, "seat_not_in_room", "座位不属于该自习室")
 
     # Exclusive room lock: bookings in flight for this room finish first, so
     # they are either refused by this restriction or listed as affected.
@@ -118,6 +118,8 @@ def release(
 ) -> tuple[SeatRestriction, bool]:
     """Returns (restriction, released_now). Releasing twice is a no-op, not an error."""
     _authorize(user, source_type, source_id)
+    if source_type == "m3_repair" and reason != "accepted":
+        raise M1Error(422, "repair_acceptance_required", "维修下架仅可在验收通过后解除")
     restriction = repository.restriction_by_source(session, source_type, source_id, for_update=True)
     if restriction is None:
         raise M1Error(404, "restriction_not_found", "该来源的座位限制不存在")
