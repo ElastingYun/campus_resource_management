@@ -9,6 +9,7 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.common.resources import models as resource_models  # noqa: F401
 from app.db import Base
 
 config = context.config
