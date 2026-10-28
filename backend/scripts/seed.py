@@ -1,6 +1,7 @@
 """Apply every SQL seed file in database/seeds/ in name order, in one transaction.
 
-Usage (from backend/, with the CAMPUS_DB_* settings): python scripts/seed.py
+Usage (from backend/, with the CAMPUS_DB_* settings): python -m scripts.seed
+Run it as a module: as a plain file path Python cannot import the `app` package.
 Seeds must be idempotent; run migrations (alembic upgrade head) first.
 """
 
