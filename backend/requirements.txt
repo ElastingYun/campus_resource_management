@@ -1,0 +1,10 @@
+# Runtime dependencies for the backend. Provisional pins chosen by A to unblock
+# M1 development; D owns the final scaffold and may replace this file.
+fastapi==0.115.14
+starlette==0.46.2
+pydantic==2.14.1
+uvicorn==0.32.1
+SQLAlchemy==2.0.55
+psycopg[binary]==3.2.13
+alembic==1.14.1
+tzdata==2026.5
