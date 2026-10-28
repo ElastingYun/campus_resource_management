@@ -3,6 +3,9 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import EngineeringHome from "./shared/EngineeringHome.vue";
 import M2Workspace from "./modules/m2-approval/M2Workspace.vue";
 import ResourceWorkspace from "./modules/m1-reservation/resources/ResourceWorkspace.vue";
+import SeatSearchWorkspace from "./modules/m1-reservation/seat-search/SeatSearchWorkspace.vue";
+import { createPrototypeSeatSearchGateway } from "./modules/m1-reservation/seat-search/prototype";
+import { createUnconfiguredSeatSearchGateway } from "./modules/m1-reservation/seat-search/gateway";
 import { createPrototypeResourceGateway } from "./modules/m1-reservation/resources/prototype";
 import { createUnconfiguredResourceGateway } from "./modules/m1-reservation/resources/gateway";
 import {
@@ -15,6 +18,14 @@ const updateScreen = () => {
   screen.value = window.location.hash;
 };
 const isM2 = computed(() => ["#m2", "#m2-prototype"].includes(screen.value));
+const isSeatSearch = computed(() =>
+  ["#seat-search", "#seat-search-prototype"].includes(screen.value),
+);
+const seatSearchGateway = computed(() =>
+  screen.value === "#seat-search-prototype"
+    ? createPrototypeSeatSearchGateway()
+    : createUnconfiguredSeatSearchGateway(),
+);
 const isResources = computed(() =>
   ["#resources", "#resources-prototype"].includes(screen.value),
 );
@@ -34,6 +45,11 @@ onUnmounted(() => window.removeEventListener("hashchange", updateScreen));
 
 <template>
   <M2Workspace v-if="isM2" :key="screen" :gateway="gateway" />
+  <SeatSearchWorkspace
+    v-else-if="isSeatSearch"
+    :key="screen"
+    :gateway="seatSearchGateway"
+  />
   <ResourceWorkspace
     v-else-if="isResources"
     :key="screen"
