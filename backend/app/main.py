@@ -10,6 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import AppConfig, load_config
 from app.db import make_engine, make_sessionmaker
+from app.modules.m1_reservation import router as m1_router
+from app.modules.m1_reservation.clock import SystemClock
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -20,6 +22,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.config = config
     app.state.engine = engine
     app.state.sessionmaker = make_sessionmaker(engine)
+    app.state.clock = SystemClock()
 
     @app.get("/api/health", tags=["health"])
     def health() -> JSONResponse:
@@ -30,4 +33,5 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return JSONResponse({"status": "degraded", "database": "unavailable"}, status_code=503)
         return JSONResponse({"status": "ok", "database": "ok"})
 
+    m1_router.register(app)
     return app

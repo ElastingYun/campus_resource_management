@@ -8,6 +8,7 @@ from tests.conftest import alembic_config, create_database, drop_database
 
 # Import every model module so Base.metadata describes the full schema.
 import app.common.resources.models  # noqa: F401,E402
+import app.modules.m1_reservation.models  # noqa: F401,E402
 
 
 def test_orm_models_match_migrated_schema(engine):
