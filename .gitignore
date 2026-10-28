@@ -33,3 +33,6 @@ postgres-data/
 Thumbs.db
 *.swp
 *.swo
+
+# Isolated, pinned source checkout used only by the C-v1 CI acceptance job.
+.contract/

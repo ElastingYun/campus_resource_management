@@ -14,6 +14,7 @@ export class M2HttpError extends Error {
     readonly delivery: Delivery,
     readonly status?: number,
     readonly mayHaveWritten = false,
+    readonly serverCode?: string,
   ) {
     super(
       mayHaveWritten
@@ -94,12 +95,34 @@ export async function requestJson(
     if (!response.ok) {
       const uncertain =
         writing && (response.status >= 500 || response.status === 408);
-      // Preserve status, not raw server error bodies; the approved adapter owns field mapping.
+      let serverCode: string | undefined;
+      try {
+        const payload: unknown = await response.json();
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "error" in payload
+        ) {
+          const detail = payload.error;
+          if (
+            typeof detail === "object" &&
+            detail !== null &&
+            "code" in detail &&
+            typeof detail.code === "string" &&
+            /^[A-Z0-9_]{1,80}$/.test(detail.code)
+          )
+            serverCode = detail.code;
+        }
+      } catch (cause) {
+        if (controller.signal.aborted) throw cause;
+      }
+      // Only a bounded code is retained; raw messages, inputs and bodies never reach the view.
       throw new M2HttpError(
         "http",
         uncertain ? "unknown" : "responded",
         response.status,
         uncertain,
+        serverCode,
       );
     }
     if (method === "HEAD" || response.status === 204 || response.status === 205)

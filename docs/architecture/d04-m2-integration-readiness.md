@@ -1,45 +1,45 @@
-# M2 真实接口接入准备
+# M2 C-v1 真实接入与联调边界
 
-负责人 D（jiadongchen666）。依赖 [接口对齐 #10](https://github.com/ElastingYun/campus_resource_management/issues/10)、[C 的后端工程接入 #14](https://github.com/ElastingYun/campus_resource_management/issues/14) 和 [前端原型 PR #15](https://github.com/ElastingYun/campus_resource_management/pull/15)。
+负责人 D（jiadongchen666），关联 [#16](https://github.com/ElastingYun/campus_resource_management/issues/16)、[接口讨论 #10](https://github.com/ElastingYun/campus_resource_management/issues/10)、[前端 PR #17](https://github.com/ElastingYun/campus_resource_management/pull/17)。C 在 PR #22 发布了 [C-v1 契约](https://github.com/ElastingYun/campus_resource_management/blob/9e019f429cf20de0a14e6f89524c6766509cce5b/docs/architecture/c-v1-frontend-contract.md) 和对应 OpenAPI；本轮按固定提交 9e019f4 消费接口，不代批生产业务政策。
 
-## 当前可以交付的部分
+## 本轮实现
 
-页面通过 M2Gateway 与数据来源解耦，真实模式未配置时禁止提交且不回退示例。HTTP 传输位于 frontend/src/modules/m2-approval/http.ts，只有获得批准的路径和映射后才由真实 gateway 调用；当前没有业务 URL、认证实现或可用接口被擅自接入。
+`/#m2` 使用 C-v1 登录、当前身份、退出、授权申请列表、详情/历史/actions、节点通过/驳回与撤销。`/#m2-prototype` 继续单独使用明确标注的合成数据。B 的资源入口和模块保持原状。
 
-requestJson 接收同源绝对路径和请求选项，返回 unknown JSON，由正式适配器验证结构后再映射页面。浏览器使用 same-origin 凭据边界并拒绝重定向；没有存储令牌或选定 C 的登录方案。正式路由、身份携带方式和字段错误映射仍需 C 确认。
+Bearer、身份和有效期仅存于页面内存；密码在登录尝试结束后清空，不写 localStorage、sessionStorage、URL 或日志。401 只失效产生该请求的同一个会话，旧请求不能清除新的登录状态。退出立即清除本页会话，服务端退出无法确认时如实提示。
 
-## HTTP 与业务结果的区别
+列表使用 C 的数组与 limit/offset，不编造 total、后端筛选或 applicant_id 参数。页面标题为授权范围内的申请记录；审批待办使用独立 review-tasks。详情、actions 的 ID 与 version 必须对应，允许动作只取后端结果，写入仍由后端重新授权。
 
-| 情况 | 传输层结果 | 页面适配器后续职责 |
-| --- | --- | --- |
-| 无效配置、无法序列化、发送前已取消 | not_sent | 修正请求，不声称已提交 |
-| 收到明确 HTTP 响应 | responded，并保留 HTTP 状态 | 按批准契约解释权限、校验、冲突等；不把 HTTP 状态直接当成业务状态 |
-| 写请求网络失败、超时、发送后取消、5xx/408 或成功响应无法解析 | unknown | 先按契约查询结果或提示人工确认，不直接提示“未写入”或自动重复提交 |
-| 204/205 或 HEAD | 无 JSON 内容 | 不编造申请 ID；是否符合该业务接口须按契约判断 |
-| 合法 JSON | unknown 类型的数据 | 校验必需字段、身份范围、状态与真实持久化结果后才能展示业务成功 |
+审批结果、占用结果与 effective 分开显示。PASSED + APPLY_PENDING/UNKNOWN 不是占用已生效；只有后端一致返回 PASSED、APPLIED、未撤销且 effective=true 才显示已确认。未知状态不推断为可用。
 
-读取请求发生传输错误时 delivery 也为 unknown，但 mayHaveWritten 为 false，不会将它误描述为写入未知。函数不会自动重试请求。错误只携带固定消息、分类和 HTTP 状态，不将原始服务错误正文、主机或凭据直接暴露给页面。测试使用 /test-contract-path 验证 HTTP 机制，该路径不是业务接口。
+## 教室服务与权限依赖
 
-## 最小契约交付清单
+真实教室选择读取 B 的 `/api/v1/resources/rooms`，保留字符串 ID，不经 Number 转换。只呈现服务端已授权返回的静态启用教室；不从院系 null、角色名或 enabled 推导申请资格，也不自行计算可预约性。
 
-| Owner | 必须提供或确认 | 当前状态 |
-| --- | --- | --- |
-| C / Wuyh11 | 当前用户、身份携带、过期/无权限；提交/本人列表/详情的方法路径、字段、状态与合成成功/失败样例 | #14 进行中，远端契约待交付 |
-| C / Wuyh11 | 幂等标识、超时后的结果查询、重复操作及允许的动作 | #10 待回复 |
-| B / hrzhao7 | 稳定教室 ID、最小列表/详情、授权范围和资源失效结果 | #10 待回复 |
-| A / ElastingYun 与 C | 时段可用性及审批结果/占用生效之间的展示语义 | #10 待回复；完整补偿另属 D-05 |
-| D | 将批准的后端结构映射为页面模型，配置业务代理/服务地址，补充真实联调证据 | 依赖上述最小契约，不以示例填充 |
+B #20 已合入前端集成分支。C 的 [#24](https://github.com/ElastingYun/campus_resource_management/issues/24) 仍负责真实身份、普通用户可见范围和同事务审计；B/A 的共享表及 nullable 院系语义仍需相关 owner 确认。本轮不挂载无身份的资源 router，不给学生管理读取权。
 
-Owner 的确认应包含人、日期、版本化文档/实现 PR 链接。未回复不算批准，草案和原型字段不能自动变成共享 API/schema。跨模块副作用仍由后端通过批准网络契约处理。
+资源无权限、未挂载、数据不合法或当前未取得完整列表时，保留申请查询与详情，但禁用新建并提示原因；不使用占位教室或合成数据替代。当前选择器只接受一次完整的最多 100 条教室结果，更大列表需后续接入分页选择器。
 
-## 真实联调的验收顺序
+## 未知结果与恢复
 
-1. 在隔离环境应用批准迁移，启动 C 的真实 API 和对应资源服务，使用合成账号与教室。
-2. 以真实身份读取授权教室列表，提交一条申请，保留后端返回标识。
-3. 刷新后在本人列表和详情中读取同一条持久化记录，不能使用原型内存记录。
-4. 验证无权限、校验错误、教室失效、重复提交与过期动作，页面保留可修正输入。
-5. 在隔离环境模拟写请求结果未知，按批准查询接口恢复；测试证明不会重复创建申请。
-6. 如首轮包含审批，验证后端授权与允许转换；审批通过不等于 M1 占用已生效，按 A/C 契约展示。
-7. 保存提交、环境、真实 HTTP 结果和 CI/人工检查记录，完成非作者 Review。
+每次写入生成独立 Idempotency-Key，并保存原路径、原内容和操作者。未知结果时禁止发起新写入；用户通过“恢复上次操作结果”使用原键/内容重放，取得 ID 后只 GET 最新申请。决定/撤销同样保留原 expected_version，不生成新键猜测重做。
 
-当前 HTTP 单元测试和页面原型测试不构成上述真实联调通过。业务认证、API 映射、持久化、真实审批与 M1 写回均为待交付能力；本准备 PR 不关闭真实接入任务。
+明确的初次 4xx 拒绝允许修正后重新发起；一旦结果未知，恢复错误不清除原操作。恢复记录按 UUID 身份隔离，切换账号不会显示或重放他人的记录。记录仅保存在本页内存，跨刷新恢复尚未实现；存在待恢复操作时启用离页提示，并提示先核对再刷新。
+
+HTTP 传输仍限制同源路径与重定向，清理超时/取消监听；只提取符合格式的 C error.code 进行固定安全提示，不渲染原始错误正文或凭据。空/不合法成功响应不能生成业务成功记录。
+
+## 运行与代理
+
+后端需要 PR #22 的 C 实现、批准迁移和显式配置。当前前端分支不复制 C 源码，原 bootstrap 后端不因设置环境变量就自动获得 C API。C 的配置、账号引导见其运行说明。
+
+本机可分别检出 C 后端和本前端。在 frontend 中设置 `CAMPUS_DEV_BACKEND_URL=http://127.0.0.1:8000` 后执行 npm run dev；Vite 的 /api 与 /health 同源代理到该后端。容器 Nginx 也提供 /api 代理。后端服务凭据只留在服务端，不传入前端环境。
+
+运行 `npm ci`、`npm run test`、`npm run build`。Node 22 类型仅作为集成测试开发依赖，浏览器与 Node 测试分别执行类型检查。
+
+## 真实网络验证
+
+新增 `.github/workflows/m2-c-v1.yml`，固定检出 C 的 9e019f429cf20de0a14e6f89524c6766509cce5b，启动真实 FastAPI 与 PostgreSQL 17，再通过 Vite 代理执行前端 client。验证合成账号真实登录、服务端身份、实际申请持久化、已提交响应丢失后的同键恢复、权限拒绝、两级节点决定、重新登录后查询和会话撤销。
+
+教室引用验证使用显式标注的 CI 合成资源 HTTP 服务，M1 关闭。测试必须验证最终审批通过仍 effective=false；该结果只计为 D↔C 接入，不计为真实 B/A/E 联调。CI 不允许因缺少服务 origin 而静默跳过。本机缺少 C 服务/PostgreSQL 时该用例为 NOT RUN，不能记为通过。
+
+首次真实 run 结果以 PR #17 Checks 和后续验证记录为准。本轮没有修改 C/B/A 业务代码、schema 或权限配置，没有生产发布。后续仍需 #24 的真实资源接入、[#23](https://github.com/ElastingYun/campus_resource_management/issues/23) 的 A/C 来源协议与网络验收，以及相关 owner 的非作者 Review。

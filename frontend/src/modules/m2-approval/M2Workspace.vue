@@ -1,24 +1,37 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { GatewayMessage } from "./models";
 import type {
+  ApplicationDetails,
   ApplicationDraft,
   ApplicationView,
   M2Gateway,
   RoomOption,
+  WorkspaceData,
 } from "./models";
 
 const props = defineProps<{ gateway: M2Gateway }>();
 const page = ref<"list" | "new" | "review">("list");
-const rooms = ref<RoomOption[]>([]);
-const applications = ref<ApplicationView[]>([]);
-const selectedId = ref("");
-const search = ref("");
-const loading = ref(false);
-const writing = ref(false);
-const error = ref("");
-const notice = ref("");
-const loaded = ref(false);
+const rooms = ref<RoomOption[]>([]),
+  applications = ref<ApplicationView[]>([]);
+const selectedId = ref(""),
+  search = ref(""),
+  loading = ref(false),
+  writing = ref(false),
+  loaded = ref(false);
+const error = ref(""),
+  notice = ref(""),
+  roomWarning = ref(""),
+  canSubmit = ref(true),
+  canReview = ref(false);
+const pagination = ref<WorkspaceData["pagination"]>(),
+  offset = ref(0);
+const detail = ref<ApplicationDetails>(),
+  detailLoading = ref(false),
+  detailError = ref(""),
+  comment = ref("");
+const pending = ref<{ label: string }>();
+let detailRequest = 0;
 const draft = reactive<ApplicationDraft>({
   roomId: "",
   purpose: "",
@@ -26,8 +39,13 @@ const draft = reactive<ApplicationDraft>({
   endsAt: "",
 });
 const prototype = computed(() => props.gateway.mode === "prototype");
+const live = computed(() => props.gateway.mode === "live");
 const canWrite = computed(
-  () => loaded.value && props.gateway.mode !== "unconfigured",
+  () =>
+    loaded.value &&
+    props.gateway.mode !== "unconfigured" &&
+    canSubmit.value &&
+    !pending.value,
 );
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase();
@@ -40,11 +58,16 @@ const selected = computed(
     filtered.value.find((item) => item.id === selectedId.value) ??
     filtered.value[0],
 );
+const shown = computed(() =>
+  detail.value?.id === selected.value?.id ? detail.value : selected.value,
+);
 const messageFor = (cause: unknown) =>
   cause instanceof GatewayMessage
     ? cause.message
     : "暂时无法完成操作，请保留输入后重试。";
-
+const syncPending = () => {
+  pending.value = props.gateway.pending?.();
+};
 async function reload() {
   if (loading.value || writing.value) return;
   loading.value = true;
@@ -52,9 +75,17 @@ async function reload() {
   error.value = "";
   notice.value = "";
   try {
-    const data = await props.gateway.load();
+    const data = await props.gateway.load({
+      limit: 20,
+      offset: offset.value,
+      review: page.value === "review" && !prototype.value,
+    });
     rooms.value = data.rooms;
     applications.value = data.applications;
+    canSubmit.value = data.canSubmit ?? true;
+    canReview.value = data.canReview ?? false;
+    roomWarning.value = data.roomWarning ?? "";
+    pagination.value = data.pagination;
     loaded.value = true;
   } catch (cause) {
     rooms.value = [];
@@ -62,9 +93,41 @@ async function reload() {
     error.value = messageFor(cause);
   } finally {
     loading.value = false;
+    syncPending();
   }
 }
-
+async function refreshDetail() {
+  const id = selected.value?.id,
+    request = ++detailRequest;
+  detail.value = undefined;
+  detailError.value = "";
+  comment.value = "";
+  if (!id || !props.gateway.detail) {
+    detailLoading.value = false;
+    return;
+  }
+  detailLoading.value = true;
+  try {
+    const value = await props.gateway.detail(id);
+    if (request === detailRequest && selected.value?.id === id)
+      detail.value = value;
+  } catch (cause) {
+    if (request === detailRequest) detailError.value = messageFor(cause);
+  } finally {
+    if (request === detailRequest) detailLoading.value = false;
+  }
+}
+watch(() => selected.value?.id, refreshDetail);
+function acceptRecord(record: ApplicationView) {
+  applications.value = [
+    record,
+    ...applications.value.filter((item) => item.id !== record.id),
+  ];
+  selectedId.value = record.id;
+  search.value = "";
+  page.value = "list";
+  offset.value = 0;
+}
 async function submit() {
   if (writing.value || !canWrite.value) return;
   error.value = "";
@@ -86,27 +149,20 @@ async function submit() {
   }
   writing.value = true;
   try {
-    const record = await props.gateway.submit({
-      ...draft,
-      purpose: draft.purpose.trim(),
-    });
-    applications.value = [
-      record,
-      ...applications.value.filter((item) => item.id !== record.id),
-    ];
-    selectedId.value = record.id;
-    search.value = "";
-    page.value = "list";
+    acceptRecord(
+      await props.gateway.submit({ ...draft, purpose: draft.purpose.trim() }),
+    );
     notice.value = prototype.value
       ? "已添加演示记录；没有发送真实申请，刷新后重置。"
-      : "申请已提交，请以服务端返回结果为准。";
+      : "申请已提交；占用是否生效请查看服务端状态。";
+    await refreshDetail();
   } catch (cause) {
     error.value = messageFor(cause);
   } finally {
     writing.value = false;
+    syncPending();
   }
 }
-
 async function simulate(decision: "accept" | "return") {
   if (
     !prototype.value ||
@@ -133,14 +189,78 @@ async function simulate(decision: "accept" | "return") {
     writing.value = false;
   }
 }
-
+async function act(action: "APPROVE" | "REJECT" | "REVOKE") {
+  const current = detail.value;
+  if (
+    writing.value ||
+    pending.value ||
+    !current ||
+    !current.allowedActions.includes(action)
+  )
+    return;
+  writing.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    const record =
+      action === "REVOKE"
+        ? await props.gateway.revoke!(current.id, current.version)
+        : await props.gateway.decide!(
+            current.id,
+            action,
+            comment.value,
+            current.version,
+          );
+    acceptRecord(record);
+    notice.value = "服务端已返回操作结果，请分别查看审批和占用状态。";
+    await refreshDetail();
+  } catch (cause) {
+    error.value = messageFor(cause);
+  } finally {
+    writing.value = false;
+    syncPending();
+  }
+}
+async function recover() {
+  if (!props.gateway.recover || writing.value) return;
+  writing.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    acceptRecord(await props.gateway.recover());
+    notice.value = "已按原恢复键核对并读取最新结果，没有新建重复操作。";
+    await refreshDetail();
+  } catch (cause) {
+    error.value = messageFor(cause);
+  } finally {
+    writing.value = false;
+    syncPending();
+  }
+}
 function navigate(next: "list" | "new" | "review") {
   if (writing.value) return;
+  const changed = page.value !== next;
   page.value = next;
   error.value = "";
   notice.value = "";
+  if (changed && live.value && next !== "new") {
+    offset.value = 0;
+    void reload();
+  }
 }
-const formatTime = (value: string) => value.replace("T", " ");
+async function paginate(direction: -1 | 1) {
+  if (loading.value || writing.value) return;
+  offset.value = Math.max(0, offset.value + direction * 20);
+  search.value = "";
+  await reload();
+}
+const formatTime = (value: string) =>
+  prototype.value
+    ? value.replace("T", " ")
+    : new Intl.DateTimeFormat("zh-CN", {
+        dateStyle: "short",
+        timeStyle: "short",
+      }).format(new Date(value));
 onMounted(reload);
 </script>
 
@@ -159,7 +279,7 @@ onMounted(reload);
             :disabled="writing"
             @click="navigate('list')"
           >
-            我的申请
+            {{ live ? "申请记录" : "我的申请" }}
           </button>
           <button
             :aria-pressed="page === 'new'"
@@ -169,12 +289,12 @@ onMounted(reload);
             新建申请
           </button>
           <button
-            v-if="prototype"
+            v-if="prototype || canReview"
             :aria-pressed="page === 'review'"
             :disabled="writing"
             @click="navigate('review')"
           >
-            审批预览
+            {{ prototype ? "审批预览" : "审批待办" }}
           </button>
         </nav>
         <p class="sidebar-note">
@@ -198,8 +318,12 @@ onMounted(reload);
                 page === "new"
                   ? "新建教室申请"
                   : page === "review"
-                    ? "审批交互预览"
-                    : "我的教室申请"
+                    ? prototype
+                      ? "审批交互预览"
+                      : "审批待办"
+                    : live
+                      ? "可访问的教室申请"
+                      : "我的教室申请"
               }}
             </h2>
           </div>
@@ -211,6 +335,16 @@ onMounted(reload);
             重新载入
           </button>
         </div>
+        <p v-if="roomWarning" class="integration-pending">{{ roomWarning }}</p>
+        <div v-if="pending" class="error" role="note">
+          <strong>{{ pending.label }}结果未确认</strong>
+          <p>
+            先恢复上次操作，再发起新操作。恢复记录仅保留在本页内存中，请先核对结果再刷新。
+          </p>
+          <button class="secondary" :disabled="writing" @click="recover">
+            恢复上次操作结果
+          </button>
+        </div>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-if="loading" class="empty" role="status">正在载入申请与教室…</p>
@@ -220,7 +354,13 @@ onMounted(reload);
           @submit.prevent="submit"
           novalidate
         >
-          <p class="form-intro">填写教室用途与时段，预览申请过程。</p>
+          <p class="form-intro">
+            {{
+              prototype
+                ? "填写教室用途与时段，预览申请过程。"
+                : "填写用途与时段。时间按设备当地时区输入，最终由服务端校验。"
+            }}
+          </p>
           <fieldset :disabled="!canWrite || writing">
             <label for="m2-room">选择教室</label
             ><select id="m2-room" v-model="draft.roomId" required>
@@ -272,7 +412,8 @@ onMounted(reload);
         <template v-else-if="loaded">
           <div class="summary">
             <div>
-              <span>当前记录</span><strong>{{ applications.length }}</strong>
+              <span>{{ live ? "本页记录" : "当前记录" }}</span
+              ><strong>{{ applications.length }}</strong>
             </div>
             <div>
               <span>可选教室</span><strong>{{ rooms.length }}</strong>
@@ -280,12 +421,16 @@ onMounted(reload);
             <p>
               {{
                 page === "review"
-                  ? "演示审批视角，不代表当前账号拥有审批权限。"
+                  ? prototype
+                    ? "演示审批视角，不代表当前账号拥有审批权限。"
+                    : "待办范围和可执行操作由服务端返回。"
                   : "选择一条申请查看时段、用途和处理信息。"
               }}
             </p>
           </div>
-          <label class="search-label" for="m2-search">查询申请</label
+          <label class="search-label" for="m2-search">{{
+            live ? "查询本页申请" : "查询申请"
+          }}</label
           ><input
             id="m2-search"
             v-model="search"
@@ -300,6 +445,7 @@ onMounted(reload);
                 :key="item.id"
                 class="record-card"
                 :aria-pressed="selected?.id === item.id"
+                :disabled="writing"
                 @click="selectedId = item.id"
               >
                 <span class="record-top"
@@ -315,27 +461,93 @@ onMounted(reload);
                 >
               </button>
             </section>
-            <section v-if="selected" class="panel detail" aria-label="申请详情">
+            <section v-if="shown" class="panel detail" aria-label="申请详情">
               <p class="section-label">申请详情</p>
-              <h3>{{ selected.roomName }}</h3>
+              <h3>{{ shown.roomName }}</h3>
               <dl>
                 <dt>申请编号</dt>
-                <dd>{{ selected.id }}</dd>
+                <dd>{{ shown.id }}</dd>
                 <dt>申请用途</dt>
-                <dd>{{ selected.purpose }}</dd>
+                <dd>{{ shown.purpose }}</dd>
                 <dt>使用时段</dt>
                 <dd>
-                  {{ formatTime(selected.startsAt) }}<br />至
-                  {{ formatTime(selected.endsAt) }}
+                  {{ formatTime(shown.startsAt) }}<br />至
+                  {{ formatTime(shown.endsAt) }}
                 </dd>
                 <dt>当前展示状态</dt>
                 <dd>
-                  <span class="badge" :class="selected.statusTone">{{
-                    selected.statusLabel
+                  <span class="badge" :class="shown.statusTone">{{
+                    shown.statusLabel
                   }}</span>
                 </dd>
+                <template v-if="shown.reviewLabel"
+                  ><dt>审批结果</dt>
+                  <dd>{{ shown.reviewLabel }}</dd>
+                  <dt>占用状态</dt>
+                  <dd>{{ shown.integrationLabel }}</dd>
+                  <dt>占用生效</dt>
+                  <dd>
+                    {{ shown.effective ? "服务端已确认生效" : "尚未确认生效" }}
+                  </dd>
+                  <dt>当前进度</dt>
+                  <dd>{{ shown.stepLabel }}</dd></template
+                >
               </dl>
-              <p class="detail-note">{{ selected.note }}</p>
+              <p v-if="detailLoading" role="status">正在核对允许操作与历史…</p>
+              <p v-if="detailError" role="alert">{{ detailError }}</p>
+              <section v-if="detail && live" aria-label="服务端允许操作">
+                <label
+                  v-if="
+                    detail.allowedActions.some((action) => action !== 'REVOKE')
+                  "
+                  for="m2-comment"
+                  >审批意见</label
+                >
+                <textarea
+                  v-if="
+                    detail.allowedActions.some((action) => action !== 'REVOKE')
+                  "
+                  id="m2-comment"
+                  v-model="comment"
+                  rows="3"
+                  maxlength="2000"
+                  :disabled="writing || !!pending"
+                  placeholder="按服务端要求填写处理意见"
+                ></textarea>
+                <div class="decision-actions">
+                  <button
+                    v-for="action in detail.allowedActions"
+                    :key="action"
+                    class="secondary"
+                    :disabled="writing || !!pending"
+                    @click="act(action)"
+                  >
+                    {{
+                      action === "APPROVE"
+                        ? "通过当前节点"
+                        : action === "REJECT"
+                          ? "驳回申请"
+                          : "撤销本申请"
+                    }}
+                  </button>
+                </div>
+                <p v-if="!detail.allowedActions.length" class="muted">
+                  当前没有服务端允许的操作。
+                </p>
+                <h4>处理历史</h4>
+                <p v-if="!detail.history.length" class="muted">
+                  暂无节点决定。
+                </p>
+                <ol>
+                  <li v-for="entry in detail.history" :key="entry.id">
+                    {{ formatTime(entry.occurredAt) }} ·
+                    {{ entry.decision === "APPROVE" ? "通过节点" : "驳回" }}
+                    <p>处理人 {{ entry.actorId }}</p>
+                    <p>{{ entry.comment }}</p>
+                  </li>
+                </ol>
+              </section>
+              <p class="detail-note">{{ shown.note }}</p>
               <div
                 v-if="page === 'review' && prototype"
                 class="decision-actions"
@@ -356,6 +568,22 @@ onMounted(reload);
               </div>
             </section>
           </div>
+          <nav v-if="pagination" aria-label="申请分页" class="pagination">
+            <button
+              class="secondary"
+              :disabled="loading || writing || offset === 0"
+              @click="paginate(-1)"
+            >
+              上一页</button
+            ><span>第 {{ offset / 20 + 1 }} 页</span
+            ><button
+              class="secondary"
+              :disabled="loading || writing || !pagination.hasNext"
+              @click="paginate(1)"
+            >
+              下一页
+            </button>
+          </nav>
         </template>
         <div v-else-if="!loading" class="empty">
           <p>申请服务准备好后，这里会显示真实记录。</p>
@@ -367,6 +595,36 @@ onMounted(reload);
 </template>
 
 <style scoped>
+.pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+.pagination button {
+  width: auto;
+}
+.detail ol {
+  padding-left: 18px;
+  font-size: 13px;
+}
+.detail li {
+  margin: 16px 0;
+}
+.detail li p {
+  overflow-wrap: anywhere;
+  margin: 3px 0;
+  color: #63776a;
+}
+.integration-pending {
+  font-size: 14px;
+  color: #806537;
+  padding: 12px;
+  background: #fff6df;
+  border-radius: 6px;
+}
+
 .m2-workspace {
   min-height: 100vh;
   color: #213a35;
