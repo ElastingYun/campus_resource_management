@@ -13,7 +13,8 @@
 | 时间 | ISO 8601。**不带时区的输入按业务时区 `Asia/Shanghai` 解释**；带偏移的输入按偏移换算。响应一律带 `+08:00`。查询串中的 `+` 要编码为 `%2B` |
 | 区间 | 半开区间 `[start_at, end_at)`：10:00 结束和 10:00 开始不冲突 |
 | 错误 | 业务错误：`{"error": {"code", "message", "details"?}}`，`code` 是稳定的机器可读值；请求格式错误沿用 FastAPI 默认的 `422 {"detail": [...]}` |
-| 身份 | 只依赖 `CurrentUser(id, department_id, permissions)`。C 接入认证前，`AUTH_MODE=dev-headers` 读取 `X-Dev-User-Id`、`X-Dev-Department`、`X-Dev-Permissions`（逗号分隔）；**仅限本地开发和测试** |
+| 身份 | 只依赖 `CurrentUser(id, department_id, permissions)`。C 接入认证前，`CAMPUS_M1_AUTH_MODE=dev-headers` 读取 `X-Dev-User-Id`、`X-Dev-Department`、`X-Dev-Permissions`（逗号分隔）；**仅限本地开发和测试** |
+| 数据库 | 未配置数据库时，所有 M1 接口返回 503 `database_unavailable`；D 的 `/health/live` 不受影响 |
 | 幂等 | 创建预约可带 `Idempotency-Key`（≤128 字符，按用户隔离）；限制的写入和解除天然幂等（见第 4 节） |
 
 ### 权限

@@ -1,52 +1,42 @@
-# Backend (FastAPI + PostgreSQL)
+# Backend：M1 补充说明
 
-> **临时脚手架（作者：A）。** 统一后端工程由 D 负责；本目录是 A 为开发 M1 先搭的最小工程，依赖版本、目录和命令均待 D 评审后确认或替换。
+环境准备、启动、检查和 CI 的通用说明见 D 的 [docs/development.md](../docs/development.md)。本文只补充 M1 特有的配置和命令。M1 的接口与对接方式见 [docs/a-m1-handbook.md](../docs/a-m1-handbook.md)。
 
-## 本地运行
+## M1 配置
 
-需要 Python 3.12 和一个 PostgreSQL 16（M1 使用排他约束和 advisory lock，SQLite 不能代替）。
+写在仓库根目录的 `.env` 里（示例见 `.env.example` 末尾），环境变量优先于 `.env`：
 
-```bash
-cd backend
-python3.12 -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CAMPUS_M1_TIMEZONE` | `Asia/Shanghai` | 业务时区，用于整点预约、开放时间和每日签到码 |
+| `CAMPUS_M1_AUTH_MODE` | `disabled` | `disabled` 时所有受保护的 M1 接口返回 401；`dev-headers` 时用 `X-Dev-User-Id`、`X-Dev-Department`、`X-Dev-Permissions` 请求头扮演用户。后者**只能在本机开发时使用**，测试和生产环境不得开启 |
+| `CAMPUS_M1_CHECKIN_CODE_SECRET` | 未设置 | 用于生成每日签到码。未设置时签到接口返回 503。请使用随机值，不要提交到仓库 |
 
-# 一个只供本地使用的 PostgreSQL
-docker run -d --name crm-pg -e POSTGRES_USER=campus -e POSTGRES_PASSWORD=campus \
-    -e POSTGRES_DB=campus -p 127.0.0.1:5432:5432 postgres:16-alpine
+数据库连接使用 D 的 `CAMPUS_DB_*`。未配置数据库时，M1 接口返回 503 `database_unavailable`。
 
-cp .env.example .env            # 不要提交 .env
-set -a && . ./.env && set +a
+## 命令
 
-alembic upgrade head            # 从空库迁移到最新版本
-python scripts/seed.py          # 合成教室/座位，可重复执行
-uvicorn app.main:create_app --factory --reload
-```
-
-- 健康检查：`GET http://127.0.0.1:8000/api/health`
-- 接口文档：`http://127.0.0.1:8000/docs`；契约见 [`docs/architecture/a-m1-api-v1.md`](../docs/architecture/a-m1-api-v1.md)
-- 提醒/违约任务：`python -m app.modules.m1_reservation.jobs --loop 60`
-
-`AUTH_MODE=dev-headers` 时，用 `X-Dev-User-Id`、`X-Dev-Department`、`X-Dev-Permissions` 请求头扮演用户。这只是 C 的认证接入前的开发手段，**测试/生产环境不得开启**；默认值 `disabled` 会拒绝所有受保护接口。
-
-## 测试
+在 `backend/` 下执行：
 
 ```bash
-docker run -d --name crm-test-pg -e POSTGRES_USER=m1 -e POSTGRES_PASSWORD=m1test \
-    -p 127.0.0.1:56432:5432 postgres:16-alpine
-export TEST_DATABASE_URL=postgresql+psycopg://m1:m1test@127.0.0.1:56432/m1
-python -m pytest -q
+alembic upgrade head                                   # 0001_bootstrap → 0006_m1_seat_restrictions
+python -m scripts.seed                                 # 合成教室和座位，可重复执行
+python -m app.modules.m1_reservation.jobs --loop 60    # 提醒与违约任务（常驻进程）
+python -m pytest -m 'not integration'                  # 不需要数据库
+CAMPUS_TEST_POSTGRES=1 python -m pytest -m integration # 需要 PostgreSQL，账号要有建库权限
 ```
 
-测试会为每次运行新建一个 `crm_test_*` 数据库，从空库执行全部迁移，结束后删除。未设置 `TEST_DATABASE_URL` 时数据库测试会**失败**而不是跳过，避免“什么都没测却显示通过”。
+- 种子脚本要用 `python -m scripts.seed` 运行。写成 `python scripts/seed.py` 时，Python 找不到 `app` 包。
+- 集成测试会为每次运行新建一个 `crm_test_*` 数据库，从空库执行全部迁移，结束后删除。D 的就绪测试还要求 `CAMPUS_DB_NAME` 指向的库已经迁移到最新版本，所以要先执行 `alembic upgrade head`。
+- 没有设置 `CAMPUS_TEST_POSTGRES=1` 时，数据库测试显示为 skipped（跳过），不会显示为通过。
 
 ## 目录
 
 | 路径 | 内容 | 负责人 |
 | --- | --- | --- |
-| `app/main.py`、`app/config.py`、`app/db.py` | 应用工厂、配置、数据库会话（临时） | D 评审 |
-| `app/common/resources/` | 教室/座位主数据**占位模型**，M1 只读 | B 评审/接管 |
+| `app/main.py`、`app/config.py`、`app/database.py` | D 的应用工厂、配置和引擎；M1 挂载一行，共享 ORM `Base` | D |
+| `app/common/resources/` | 教室和座位主数据的**占位模型**，M1 只读 | 待 A/B/D 决定 |
 | `app/modules/m1_reservation/` | M1 全部业务代码 | A |
-| `alembic/versions/` | 版本化迁移：0001 主数据占位，0002–0005 M1 | 各自 owner |
-| `../database/seeds/` | 幂等的合成种子数据 | B/D 评审 |
-| `tests/` | 健康检查、迁移重放、种子幂等；`tests/m1/` 为 M1 | A |
+| `alembic/versions/` | `0001` 由 D 建立起点；`0002` 是主数据占位；`0003–0006` 属于 M1 | 各自 owner |
+| `../database/seeds/` | 幂等的合成种子数据 | 待 B/D 决定 |
+| `tests/m1/` 及 `tests/test_migrations.py`、`tests/test_seed.py` | M1 测试与迁移、种子测试 | A |

@@ -29,8 +29,8 @@
 | A-REQ-13 | M3 维修中：该室全部座位下架；验收通过后恢复 | `restrictions.apply/release`（`m3_repair`） | `test_restrictions.py` | M1 侧已实现；需与 E 联调 |
 | A-REQ-14 | 座位状态记录写入来源（M1/M2/M3），供追溯与验收 | `m1_seat_state_events`（迁移 0003），`GET /ops/seat-events` | `test_restrictions.py`、`test_ops_and_settings.py` | 已实现 |
 | A-REQ-15 | 多个原因叠加时不误恢复 | 每个来源单独一行，解除只改这一行 | `test_restrictions.py` | 已实现 |
-| A-REQ-16 | schema 以版本化迁移交付，可从空库重放 | `alembic/versions/0001–0005` | `test_migrations.py` | 已实现；接入流水线依赖 D |
-| A-REQ-17 | 种子数据脚本化、幂等、与业务数据分离 | `database/seeds/`、`scripts/seed.py` | `test_seed.py` | 已实现（只有合成教室/座位） |
+| A-REQ-16 | schema 以版本化迁移交付，可从空库重放 | `alembic/versions/0002–0006`，接在 D 的 `0001_bootstrap` 之后 | `test_migrations.py` | 已实现；已接入 D 的 CI（迁移执行两次，再跑集成测试） |
+| A-REQ-17 | 种子数据脚本化、幂等、与业务数据分离 | `database/seeds/`、`python -m scripts.seed` | `test_seed.py`（包括以独立进程运行该命令） | 已实现（只有合成教室/座位）；还没进后端镜像 |
 
 ## 3. v1 的暂定决策（待确认）
 
@@ -66,5 +66,5 @@
 | 教室/座位停用、注销对已有预约的影响 | B-OPEN-02 未决 |
 | 节假日、按日期变化的开放时间 | B 的开放时间模型未定 |
 | 预约结束后的“已完成”状态 | 当前已签到的预约结束后仍显示 `checked_in`；统计不受影响 |
-| 部署、CI、流水线中执行迁移 | D 负责 |
+| 部署到测试/生产环境；M1 任务进程加入 Compose；种子数据进镜像 | D 负责。CI 已经在运行 M1 的 ruff、测试和迁移 |
 | 与 M2、M3 的真实网络联调 | 对方服务尚未实现 |
