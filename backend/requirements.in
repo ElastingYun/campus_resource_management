@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic-settings>=2,<3
+SQLAlchemy>=2,<3
+psycopg[binary]>=3,<4
+alembic>=1,<2
