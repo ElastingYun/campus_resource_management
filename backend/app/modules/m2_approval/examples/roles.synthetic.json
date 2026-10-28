@@ -1,0 +1,5 @@
+{
+  "synthetic-student": ["m2.submit"],
+  "synthetic-first-reviewer": ["m2.review", "review.first", "m2.read_all", "m2.revoke", "audit.read"],
+  "synthetic-second-reviewer": ["m2.review", "review.second", "m2.read_all"]
+}
