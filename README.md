@@ -44,7 +44,7 @@
 | Python ORM / 数据迁移 | SQLAlchemy + Alembic | D-02 已接入连接与基础版本历史 |
 | 自动化测试 | pytest；前端页面测试工具待定 | D-02 已提供工程行为测试 |
 | 容器化 | Docker + Docker Compose | D-02 提供开发配置，实际运行证据见 PR |
-| CI/CD | GitHub Actions | 推荐，待初始化确认 |
+| CI/CD | GitHub Actions | D-03 已配置工程检查，执行证据见 PR |
 | 运行环境 | 华为云 ECS（课程代金券） | 拟采用，资源规格及环境隔离方案待确认 |
 
 **开发原则：** 保持 Monorepo（单仓库）；按业务模块明确代码所有权；尽量共享经过评审的工程约定，而不是由 6 个 AI Agent 各自创建一套框架。
@@ -66,7 +66,7 @@
 
 ## 4. 仓库组织（目录骨架）
 
-> **以下目录骨架已建立，空目录通过 `.gitkeep` 纳入 Git 版本管理。** D-02 已加入无业务路由的最小运行骨架，启动方式见下方运行与测试。业务功能和最终服务拓扑仍待实现/确认，CI 在 D-03 中接入。目录调整需提交 ADR 或经相关负责人评审。
+> **以下目录骨架已建立，空目录通过 `.gitkeep` 纳入 Git 版本管理。** D-02 已加入无业务路由的最小运行骨架，启动方式见下方运行与测试。业务功能和最终服务拓扑仍待实现/确认，D-03 已加入工程 CI，实际执行证据见 PR。目录调整需提交 ADR 或经相关负责人评审。
 
 ```text
 campus_resource_management/
@@ -105,7 +105,7 @@ campus_resource_management/
 └── .gitignore
 ```
 
-目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/` 已提供基础迁移和版本历史，不包含业务表；`.github/workflows/` 目前只有占位文件，自动构建、测试和部署尚未启用。`.gitignore` 用于排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
+目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/` 已提供基础迁移和版本历史，不包含业务表；`.github/workflows/ci.yml` 提供构建、测试、真实数据库与容器检查；自动部署、生产发布尚未启用。`.gitignore` 用于排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
 
 共享目录和跨模块文件的修改必须通知对应负责人；涉及公共层、schema 或 API 契约的 PR，须安排受影响模块成员参与 Review。
 
@@ -154,7 +154,7 @@ cp .env.example .env
 docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
 ```
 
-浏览器打开 http://127.0.0.1:8080。也可按开发说明用 Node 22、Python 3.13 在本机分别运行前后端。数据库未配置/不可达时 readiness 明确返回 503，存活探针仍可验证进程。本机与 CI 的实际验证证据以各 PR 为准，CI 在 D-03 中接入，生产发布与回滚尚未启用。
+浏览器打开 http://127.0.0.1:8080。也可按开发说明用 Node 22、Python 3.13 在本机分别运行前后端。数据库未配置/不可达时 readiness 明确返回 503，存活探针仍可验证进程。本机与 CI 的实际验证证据以各 PR 为准，D-03 提供工程 CI，分支保护由管理员配置；生产发布与回滚尚未启用。
 
 ## 6. 第一次 Review：范围与完成判据
 
