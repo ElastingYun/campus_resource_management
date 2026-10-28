@@ -6,6 +6,7 @@ Create Date: 2026-10-27
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0002_m1_reservations"
@@ -31,8 +32,12 @@ def upgrade() -> None:
         sa.Column("checked_in_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancel_reason", sa.String(32), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_m1_reservations"),
         sa.ForeignKeyConstraint(["seat_id"], ["seats.id"], name="fk_m1_reservations_seat_id_seats"),
         sa.ForeignKeyConstraint(["room_id"], ["rooms.id"], name="fk_m1_reservations_room_id_rooms"),
@@ -60,7 +65,9 @@ def upgrade() -> None:
         sa.Column("key", sa.String(64), nullable=False),
         sa.Column("value", sa.Integer(), nullable=False),
         sa.Column("updated_by", sa.String(64), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("key", name="pk_m1_settings"),
     )
 

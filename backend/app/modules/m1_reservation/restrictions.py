@@ -28,7 +28,9 @@ _SOURCE_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 def _authorize(user: CurrentUser, source_type: str, source_id: str) -> None:
     if not user.has(PERMISSIONS[source_type]):
         # A caller may only touch its own module's restrictions (M2 cannot lift M3's).
-        raise M1Error(403, "forbidden", "无权写入该来源的座位限制", {"required": PERMISSIONS[source_type]})
+        raise M1Error(
+            403, "forbidden", "无权写入该来源的座位限制", {"required": PERMISSIONS[source_type]}
+        )
     if not _SOURCE_ID.fullmatch(source_id):
         raise M1Error(422, "invalid_source_id", "来源业务 ID 格式不正确")
 
@@ -60,7 +62,9 @@ def apply(
     if seat_id is not None:
         raise M1Error(422, "room_scope_required", "审批占用和维修下架必须作用于整间教室")
     if source_type == "m3_repair" and end_at is not None:
-        raise M1Error(422, "repair_end_forbidden", "维修下架必须持续至验收通过，不可按结束时间自动恢复")
+        raise M1Error(
+            422, "repair_end_forbidden", "维修下架必须持续至验收通过，不可按结束时间自动恢复"
+        )
     start = to_business_time(start_at, tz)
     end = to_business_time(end_at, tz) if end_at is not None else None
     if end is None and source_type == "m2_approval":
@@ -76,8 +80,15 @@ def apply(
     existing = repository.restriction_by_source(session, source_type, source_id)
     if existing is not None:
         if existing.status == "released":
-            raise M1Error(409, "restriction_released", "该来源的限制已解除，不能再次生效；请使用新的业务 ID")
-        if (existing.room_id, existing.seat_id, existing.start_at, existing.end_at) != (room_id, seat_id, start, end):
+            raise M1Error(
+                409, "restriction_released", "该来源的限制已解除，不能再次生效；请使用新的业务 ID"
+            )
+        if (existing.room_id, existing.seat_id, existing.start_at, existing.end_at) != (
+            room_id,
+            seat_id,
+            start,
+            end,
+        ):
             raise M1Error(409, "restriction_conflict", "同一来源已存在参数不同的限制")
         return existing, False, repository.active_reservations_under(session, existing)
 
@@ -114,7 +125,13 @@ def apply(
 
 
 def release(
-    session: Session, user: CurrentUser, source_type: str, source_id: str, *, reason: str, now: datetime
+    session: Session,
+    user: CurrentUser,
+    source_type: str,
+    source_id: str,
+    *,
+    reason: str,
+    now: datetime,
 ) -> tuple[SeatRestriction, bool]:
     """Returns (restriction, released_now). Releasing twice is a no-op, not an error."""
     _authorize(user, source_type, source_id)

@@ -6,6 +6,7 @@ Create Date: 2026-10-27
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0005_m1_seat_restrictions"
@@ -32,13 +33,20 @@ def upgrade() -> None:
         sa.Column("released_by", sa.String(64), nullable=True),
         sa.Column("release_reason", sa.String(64), nullable=True),
         sa.PrimaryKeyConstraint("id", name="pk_m1_seat_restrictions"),
-        sa.ForeignKeyConstraint(["room_id"], ["rooms.id"], name="fk_m1_seat_restrictions_room_id_rooms"),
-        sa.ForeignKeyConstraint(["seat_id"], ["seats.id"], name="fk_m1_seat_restrictions_seat_id_seats"),
+        sa.ForeignKeyConstraint(
+            ["room_id"], ["rooms.id"], name="fk_m1_seat_restrictions_room_id_rooms"
+        ),
+        sa.ForeignKeyConstraint(
+            ["seat_id"], ["seats.id"], name="fk_m1_seat_restrictions_seat_id_seats"
+        ),
         sa.UniqueConstraint("source_type", "source_id", name="uq_m1_seat_restrictions_source"),
         sa.CheckConstraint(
-            "source_type IN ('m2_approval', 'm3_repair')", name="ck_m1_seat_restrictions_source_type"
+            "source_type IN ('m2_approval', 'm3_repair')",
+            name="ck_m1_seat_restrictions_source_type",
         ),
-        sa.CheckConstraint("status IN ('active', 'released')", name="ck_m1_seat_restrictions_status"),
+        sa.CheckConstraint(
+            "status IN ('active', 'released')", name="ck_m1_seat_restrictions_status"
+        ),
         sa.CheckConstraint(
             "end_at IS NULL OR start_at < end_at", name="ck_m1_seat_restrictions_start_before_end"
         ),

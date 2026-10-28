@@ -1,7 +1,6 @@
 """Runtime M1 parameters ("系统参数可调"): code defaults, overridden by m1_settings rows."""
 
 from dataclasses import asdict, dataclass, fields, replace
-
 from datetime import datetime
 
 from sqlalchemy import select
@@ -43,7 +42,9 @@ def validate(candidate: M1Settings) -> None:
     for key, (low, high) in BOUNDS.items():
         value = getattr(candidate, key)
         if not low <= value <= high:
-            raise M1Error(422, "invalid_setting", f"{key} 必须在 {low} 到 {high} 之间", {"key": key})
+            raise M1Error(
+                422, "invalid_setting", f"{key} 必须在 {low} 到 {high} 之间", {"key": key}
+            )
     if candidate.late_remind_minutes >= candidate.no_show_minutes:
         raise M1Error(
             422,
@@ -57,14 +58,17 @@ def as_dict(settings: M1Settings) -> dict[str, int]:
     return asdict(settings)
 
 
-def update(session: Session, changes: dict[str, int], *, actor_id: str, now: datetime) -> M1Settings:
+def update(
+    session: Session, changes: dict[str, int], *, actor_id: str, now: datetime
+) -> M1Settings:
     candidate = replace(load_settings(session), **changes)
     validate(candidate)
     for key, value in changes.items():
         stmt = insert(Setting).values(key=key, value=value, updated_by=actor_id, updated_at=now)
         session.execute(
             stmt.on_conflict_do_update(
-                index_elements=["key"], set_={"value": value, "updated_by": actor_id, "updated_at": now}
+                index_elements=["key"],
+                set_={"value": value, "updated_by": actor_id, "updated_at": now},
             )
         )
     session.commit()

@@ -15,12 +15,16 @@ def daily_usage(session: Session, day: date, tz: ZoneInfo) -> list[dict]:
     end = start + timedelta(days=1)
     hours = func.extract("epoch", Reservation.end_at - Reservation.start_at) / 3600
     stats = session.execute(
-        select(Reservation.room_id, Reservation.status, func.count(), func.coalesce(func.sum(hours), 0))
+        select(
+            Reservation.room_id, Reservation.status, func.count(), func.coalesce(func.sum(hours), 0)
+        )
         .where(Reservation.start_at >= start, Reservation.start_at < end)
         .group_by(Reservation.room_id, Reservation.status)
     ).all()
     seat_counts = dict(
-        session.execute(select(Seat.room_id, func.count()).where(Seat.enabled).group_by(Seat.room_id)).all()
+        session.execute(
+            select(Seat.room_id, func.count()).where(Seat.enabled).group_by(Seat.room_id)
+        ).all()
     )
     by_room: dict[int, dict[str, tuple[int, float]]] = {}
     for room_id, status, count, total_hours in stats:
@@ -39,7 +43,10 @@ def daily_usage(session: Session, day: date, tz: ZoneInfo) -> list[dict]:
                 "room_id": room.id,
                 "room_code": room.code,
                 "seat_count": seat_counts.get(room.id, 0),
-                "reservations": {s: counts.get(s, (0, 0.0))[0] for s in ("booked", "checked_in", "cancelled", "no_show")},
+                "reservations": {
+                    s: counts.get(s, (0, 0.0))[0]
+                    for s in ("booked", "checked_in", "cancelled", "no_show")
+                },
                 "checked_in_seat_hours": used,
                 "capacity_seat_hours": capacity,
                 "utilization": round(used / capacity, 4) if capacity else 0.0,
@@ -48,12 +55,18 @@ def daily_usage(session: Session, day: date, tz: ZoneInfo) -> list[dict]:
     return report
 
 
-def seat_events(session: Session, room_id: int, seat_id: int | None, limit: int) -> list[SeatStateEvent]:
+def seat_events(
+    session: Session, room_id: int, seat_id: int | None, limit: int
+) -> list[SeatStateEvent]:
     query = select(SeatStateEvent).where(SeatStateEvent.room_id == room_id)
     if seat_id is not None:
         # Room-wide events (seat_id NULL) affect every seat, so they belong in a seat's trail too.
         query = query.where((SeatStateEvent.seat_id == seat_id) | SeatStateEvent.seat_id.is_(None))
-    return list(session.scalars(query.order_by(SeatStateEvent.occurred_at.desc(), SeatStateEvent.id.desc()).limit(limit)))
+    return list(
+        session.scalars(
+            query.order_by(SeatStateEvent.occurred_at.desc(), SeatStateEvent.id.desc()).limit(limit)
+        )
+    )
 
 
 def public_actor(event: SeatStateEvent) -> str | None:

@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
@@ -16,12 +16,12 @@ DEFAULTS = M1Settings()
 
 def test_naive_input_is_business_local_time():
     slot = make_slot(datetime(2026, 11, 2, 10, 0), 2, SH, DEFAULTS)
-    assert slot.start_at == datetime(2026, 11, 2, 2, 0, tzinfo=timezone.utc)
+    assert slot.start_at == datetime(2026, 11, 2, 2, 0, tzinfo=UTC)
     assert slot.end_at - slot.start_at == timedelta(hours=2)
 
 
 def test_aware_input_is_converted_not_reinterpreted():
-    slot = make_slot(datetime(2026, 11, 2, 2, 0, tzinfo=timezone.utc), 1, SH, DEFAULTS)
+    slot = make_slot(datetime(2026, 11, 2, 2, 0, tzinfo=UTC), 1, SH, DEFAULTS)
     assert slot.start_at.astimezone(SH) == local(2, 10)
 
 

@@ -40,13 +40,17 @@ def _require_secret(secret: str) -> None:
         raise M1Error(503, "checkin_not_configured", "签到码密钥未配置（M1_CHECKIN_CODE_SECRET）")
 
 
-def room_code(session: Session, secret: str, room_id: int, *, now: datetime, tz: ZoneInfo) -> RoomCode:
+def room_code(
+    session: Session, secret: str, room_id: int, *, now: datetime, tz: ZoneInfo
+) -> RoomCode:
     _require_secret(secret)
     if session.get(Room, room_id) is None:
         raise M1Error(404, "room_not_found", "自习室不存在")
     day = now.astimezone(tz).date()
     valid_until = datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz)
-    return RoomCode(room_id=room_id, day=day, code=daily_code(secret, room_id, day), valid_until=valid_until)
+    return RoomCode(
+        room_id=room_id, day=day, code=daily_code(secret, room_id, day), valid_until=valid_until
+    )
 
 
 def check_in(
@@ -67,13 +71,20 @@ def check_in(
     if reservation.status == "checked_in":
         raise M1Error(409, "already_checked_in", "该预约已签到")
     if reservation.status != "booked":
-        raise M1Error(409, "not_checkinable", "该预约已取消或已违约，不能签到", {"status": reservation.status})
+        raise M1Error(
+            409, "not_checkinable", "该预约已取消或已违约，不能签到", {"status": reservation.status}
+        )
 
     settings = load_settings(session)
     opens_at = reservation.start_at - timedelta(minutes=settings.checkin_open_before_minutes)
     closes_at = reservation.start_at + timedelta(minutes=settings.no_show_minutes)
     if now < opens_at:
-        raise M1Error(409, "checkin_not_open", "尚未到签到时间", {"opens_at": opens_at.astimezone(tz).isoformat()})
+        raise M1Error(
+            409,
+            "checkin_not_open",
+            "尚未到签到时间",
+            {"opens_at": opens_at.astimezone(tz).isoformat()},
+        )
     if now >= closes_at:
         raise M1Error(409, "checkin_closed", "已超过签到截止时间")
 

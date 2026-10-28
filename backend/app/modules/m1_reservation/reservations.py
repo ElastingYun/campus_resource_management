@@ -57,7 +57,11 @@ def create(
             )
         )
         if previous is not None:
-            if (previous.seat_id, previous.start_at, previous.end_at) == (seat_id, slot.start_at, slot.end_at):
+            if (previous.seat_id, previous.start_at, previous.end_at) == (
+                seat_id,
+                slot.start_at,
+                slot.end_at,
+            ):
                 return previous, False
             raise M1Error(409, "idempotency_key_reused", "该幂等键已用于另一笔不同的预约")
 
@@ -101,13 +105,17 @@ def create(
     return reservation, True
 
 
-def cancel(session: Session, user: CurrentUser, reservation_id: int, *, now: datetime) -> Reservation:
+def cancel(
+    session: Session, user: CurrentUser, reservation_id: int, *, now: datetime
+) -> Reservation:
     reservation = repository.reservation_for_update(session, reservation_id)
     if reservation is None or reservation.user_id != user.id:
         # Same answer for "missing" and "someone else's" so ids reveal nothing.
         raise M1Error(404, "reservation_not_found", "预约不存在")
     if reservation.status != "booked":
-        raise M1Error(409, "not_cancellable", "只有待签到的预约可以取消", {"status": reservation.status})
+        raise M1Error(
+            409, "not_cancellable", "只有待签到的预约可以取消", {"status": reservation.status}
+        )
     if now >= reservation.start_at:
         raise M1Error(409, "cancel_window_closed", "预约开始后不能再取消")
     reservation.status = "cancelled"

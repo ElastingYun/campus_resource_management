@@ -10,7 +10,9 @@ def book(client, seat_id, start, hours=2, headers=None, key=None):
     h = dict(headers or auth())
     if key:
         h["Idempotency-Key"] = key
-    return client.post(URL, json={"seat_id": seat_id, "start_at": start.isoformat(), "hours": hours}, headers=h)
+    return client.post(
+        URL, json={"seat_id": seat_id, "start_at": start.isoformat(), "hours": hours}, headers=h
+    )
 
 
 def test_booking_succeeds_and_appears_in_history_and_search(client, clock, seeded):
@@ -28,13 +30,19 @@ def test_booking_succeeds_and_appears_in_history_and_search(client, clock, seede
 
     search = client.get(
         "/api/v1/m1/seats/availability",
-        params={"start_at": local(2, 11).isoformat(), "hours": 1, "room_id": seeded["rooms"]["LIB-101"]},
+        params={
+            "start_at": local(2, 11).isoformat(),
+            "hours": 1,
+            "room_id": seeded["rooms"]["LIB-101"],
+        },
         headers=auth("stu-002"),
     ).json()["seats"]
     assert next(s for s in search if s["seat_id"] == seat)["reasons"] == [{"code": "reserved"}]
 
 
-def test_overlapping_booking_of_same_seat_is_rejected_but_adjacent_is_allowed(client, clock, seeded):
+def test_overlapping_booking_of_same_seat_is_rejected_but_adjacent_is_allowed(
+    client, clock, seeded
+):
     seat = seeded["seats"]["LIB-101-01"]
     assert book(client, seat, local(2, 10), 2).status_code == 201
     for start, hours in [(local(2, 11), 1), (local(2, 9), 2), (local(2, 9), 4), (local(2, 10), 2)]:
@@ -61,7 +69,11 @@ def test_rule_violations_are_rejected_without_writing(client, clock, seeded, eng
         (book(client, seats["LIB-101-01"], local(2, 7), 1), 422, "start_not_in_future"),
         (book(client, seats["LIB-101-01"], local(10, 10), 1), 422, "beyond_booking_horizon"),
         (book(client, seats["LIB-101-01"], local(2, 21), 2), 422, "outside_opening_hours"),
-        (book(client, seats["CS-305-01"], local(2, 10), headers=auth(department="math")), 403, "department_restricted"),
+        (
+            book(client, seats["CS-305-01"], local(2, 10), headers=auth(department="math")),
+            403,
+            "department_restricted",
+        ),
         (book(client, 999999, local(2, 10)), 404, "seat_not_found"),
     ]
     for resp, status, code in cases:
@@ -77,7 +89,11 @@ def test_department_member_may_book_department_room(client, clock, seeded):
 
 def test_max_hours_setting_change_takes_effect(client, clock, seeded, engine):
     with engine.begin() as conn:
-        conn.execute(text("INSERT INTO m1_settings (key, value, updated_by) VALUES ('max_hours', 2, 'admin')"))
+        conn.execute(
+            text(
+                "INSERT INTO m1_settings (key, value, updated_by) VALUES ('max_hours', 2, 'admin')"
+            )
+        )
     resp = book(client, seeded["seats"]["LIB-101-01"], local(2, 10), 3)
     assert resp.status_code == 422
     assert resp.json()["error"]["details"] == {"max_hours": 2}
@@ -92,7 +108,9 @@ def test_idempotent_retry_returns_the_same_reservation(client, clock, seeded, en
     reused = book(client, seeded["seats"]["LIB-101-02"], local(2, 14), key="req-1")
     assert reused.status_code == 409 and reused.json()["error"]["code"] == "idempotency_key_reused"
     # The same key from a different user is a different request.
-    other = book(client, seeded["seats"]["LIB-101-03"], local(2, 10), headers=auth("stu-002"), key="req-1")
+    other = book(
+        client, seeded["seats"]["LIB-101-03"], local(2, 10), headers=auth("stu-002"), key="req-1"
+    )
     assert other.status_code == 201
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM m1_reservations")).scalar_one() == 2
@@ -109,7 +127,10 @@ def test_cancel_releases_the_seat_and_records_the_source(client, clock, seeded, 
     assert again.status_code == 409 and again.json()["error"]["code"] == "not_cancellable"
     with engine.connect() as conn:
         trail = conn.execute(
-            text("SELECT source_type, source_id, action, actor_id FROM m1_seat_state_events ORDER BY id")
+            text(
+                "SELECT source_type, source_id, action, actor_id "
+                "FROM m1_seat_state_events ORDER BY id"
+            )
         ).all()
     assert trail[:2] == [
         ("m1_reservation", str(rid), "reserved", "stu-001"),
@@ -138,7 +159,10 @@ def test_history_filters_by_status_and_orders_newest_first(client, clock, seeded
     early = book(client, seats["LIB-101-01"], local(2, 9), 1).json()["id"]
     late = book(client, seats["LIB-101-01"], local(3, 9), 1).json()["id"]
     client.post(f"{URL}/{early}/cancel", headers=auth())
-    assert [r["id"] for r in client.get(f"{URL}/me", headers=auth()).json()["items"]] == [late, early]
+    assert [r["id"] for r in client.get(f"{URL}/me", headers=auth()).json()["items"]] == [
+        late,
+        early,
+    ]
     booked = client.get(f"{URL}/me", params={"status": "booked"}, headers=auth()).json()["items"]
     assert [r["id"] for r in booked] == [late]
 
@@ -149,6 +173,8 @@ def test_reservation_response_never_contains_checkin_code(client, clock, seeded)
 
 
 def test_booking_requires_reserve_permission(client, clock, seeded):
-    resp = book(client, seeded["seats"]["LIB-101-01"], local(2, 10), headers=auth(perms=("m1:ops:view",)))
+    resp = book(
+        client, seeded["seats"]["LIB-101-01"], local(2, 10), headers=auth(perms=("m1:ops:view",))
+    )
     assert resp.status_code == 403
     assert resp.json()["error"]["details"]["required"] == PERM_RESERVE

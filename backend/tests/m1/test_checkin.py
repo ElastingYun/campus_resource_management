@@ -18,7 +18,9 @@ def _code(client, room_id):
 
 
 def _check_in(client, rid, code, headers=None):
-    return client.post(f"/api/v1/m1/reservations/{rid}/check-in", json={"code": code}, headers=headers or auth())
+    return client.post(
+        f"/api/v1/m1/reservations/{rid}/check-in", json={"code": code}, headers=headers or auth()
+    )
 
 
 def _booked(client, seeded, start=None):
@@ -51,7 +53,11 @@ def test_check_in_with_the_rooms_code_succeeds_and_is_recorded(client, clock, se
     assert resp.json()["status"] == "checked_in"
     assert resp.json()["checked_in_at"] == "2026-11-02T09:55:00+08:00"
     with engine.connect() as conn:
-        actions = conn.execute(text("SELECT action FROM m1_seat_state_events ORDER BY id")).scalars().all()
+        actions = (
+            conn.execute(text("SELECT action FROM m1_seat_state_events ORDER BY id"))
+            .scalars()
+            .all()
+        )
     assert actions == ["reserved", "checked_in"]
 
 
@@ -68,7 +74,9 @@ def test_check_in_window_boundaries(client, clock, seeded):
 def test_check_in_deadline_is_exclusive_at_fifteen_minutes(client, clock, seeded):
     room = seeded["rooms"]["LIB-101"]
     on_time = _booked(client, seeded)
-    late = book(client, seeded["seats"]["LIB-101-02"], local(2, 10), headers=auth("stu-002")).json()["id"]
+    late = book(
+        client, seeded["seats"]["LIB-101-02"], local(2, 10), headers=auth("stu-002")
+    ).json()["id"]
     clock.set(local(2, 10, 15) - timedelta(seconds=1))
     assert _check_in(client, on_time, _code(client, room)).status_code == 200
     clock.set(local(2, 10, 15))
@@ -90,14 +98,18 @@ def test_wrong_other_room_and_stale_codes_are_rejected(client, clock, seeded):
 def test_cannot_check_in_someone_elses_reservation(client, clock, seeded):
     rid = _booked(client, seeded)
     clock.set(local(2, 10))
-    resp = _check_in(client, rid, _code(client, seeded["rooms"]["LIB-101"]), headers=auth("stu-002"))
+    resp = _check_in(
+        client, rid, _code(client, seeded["rooms"]["LIB-101"]), headers=auth("stu-002")
+    )
     assert resp.status_code == 404
 
 
 def test_repeat_and_cancelled_check_ins_are_refused(client, clock, seeded):
     room = seeded["rooms"]["LIB-101"]
     rid = _booked(client, seeded)
-    cancelled = book(client, seeded["seats"]["LIB-101-02"], local(2, 12), headers=auth("stu-002")).json()["id"]
+    cancelled = book(
+        client, seeded["seats"]["LIB-101-02"], local(2, 12), headers=auth("stu-002")
+    ).json()["id"]
     client.post(f"/api/v1/m1/reservations/{cancelled}/cancel", headers=auth("stu-002"))
     clock.set(local(2, 10))
     assert _check_in(client, rid, _code(client, room)).status_code == 200

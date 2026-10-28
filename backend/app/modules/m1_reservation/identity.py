@@ -9,6 +9,7 @@ business logic.
 
 import re
 from dataclasses import dataclass
+from typing import Annotated
 
 from fastapi import Depends, Request
 
@@ -45,7 +46,7 @@ def get_current_user(request: Request) -> CurrentUser:
 
 
 def require(permission: str):
-    def dependency(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    def dependency(user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
         if not user.has(permission):
             raise M1Error(403, "forbidden", "没有执行该操作的权限", {"required": permission})
         return user

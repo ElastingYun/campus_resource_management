@@ -51,7 +51,9 @@ def test_overlapping_active_reservation_blocks_but_adjacent_and_cancelled_do_not
 ):
     room, seats = seeded["rooms"]["LIB-101"], seeded["seats"]
     _insert_reservation(engine, seats["LIB-101-01"], room, local(2, 11), local(2, 13))
-    _insert_reservation(engine, seats["LIB-101-02"], room, local(2, 8), local(2, 10))  # ends at start
+    _insert_reservation(
+        engine, seats["LIB-101-02"], room, local(2, 8), local(2, 10)
+    )  # ends at start
     _insert_reservation(engine, seats["LIB-101-03"], room, local(2, 10), local(2, 12), "cancelled")
     _insert_reservation(engine, seats["LIB-101-04"], room, local(2, 9), local(2, 13), "checked_in")
 
@@ -72,7 +74,9 @@ def test_only_available_hides_blocked_seats(client, clock, seeded, engine):
 def test_department_room_is_restricted_to_its_department(client, clock, seeded):
     room = seeded["rooms"]["CS-305"]
     outsider = _query(client, local(2, 10), room_id=room, headers=auth(department="math"))
-    assert all(s["reasons"] == [{"code": "department_restricted"}] for s in outsider.json()["seats"])
+    assert all(
+        s["reasons"] == [{"code": "department_restricted"}] for s in outsider.json()["seats"]
+    )
     member = _query(client, local(2, 10), room_id=room, headers=auth(department="cs"))
     assert all(s["available"] for s in member.json()["seats"])
 

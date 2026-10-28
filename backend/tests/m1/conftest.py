@@ -1,5 +1,7 @@
 """M1 fixtures: seeded synthetic rooms/seats, a controllable clock, dev identities."""
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -31,6 +33,22 @@ class FixedClock:
 def local(day: int, hour: int, minute: int = 0) -> datetime:
     """A November 2026 local time, e.g. local(2, 10) -> 2026-11-02 10:00 +08:00."""
     return datetime(2026, 11, day, hour, minute, tzinfo=SH)
+
+
+def run_together(*actions):
+    """Run each action in its own thread, all released at the same instant.
+
+    Returns their results in order; an exception in any action is re-raised here.
+    """
+    barrier = threading.Barrier(len(actions))
+
+    def gated(action):
+        barrier.wait()
+        return action()
+
+    with ThreadPoolExecutor(max_workers=len(actions)) as pool:
+        futures = [pool.submit(gated, action) for action in actions]
+        return [future.result() for future in futures]
 
 
 def auth(user_id: str = "stu-001", department: str | None = None, perms=(PERM_RESERVE,)) -> dict:

@@ -1,14 +1,22 @@
 """M1 HTTP routes. Routes parse input and authorize; services hold the rules."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.modules.m1_reservation import availability, checkin, ops, repository, reservations, restrictions
+from app.modules.m1_reservation import (
+    availability,
+    checkin,
+    ops,
+    repository,
+    reservations,
+    restrictions,
+)
+from app.modules.m1_reservation import settings as m1_settings
 from app.modules.m1_reservation.clock import Clock, get_clock
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
 from app.modules.m1_reservation.identity import (
@@ -39,7 +47,6 @@ from app.modules.m1_reservation.schemas import (
     UsageOut,
     ViolationOut,
 )
-from app.modules.m1_reservation import settings as m1_settings
 from app.modules.m1_reservation.settings import as_dict, load_settings
 from app.modules.m1_reservation.timeslots import check_booking_window, make_slot
 
@@ -50,18 +57,28 @@ def business_tz(request: Request) -> ZoneInfo:
     return ZoneInfo(request.app.state.config.business_timezone)
 
 
+DbSession = Annotated[Session, Depends(get_session)]
+AppClock = Annotated[Clock, Depends(get_clock)]
+BusinessTz = Annotated[ZoneInfo, Depends(business_tz)]
+AnyUser = Annotated[CurrentUser, Depends(get_current_user)]
+Student = Annotated[CurrentUser, Depends(require(PERM_RESERVE))]
+CheckinCodeViewer = Annotated[CurrentUser, Depends(require(PERM_CHECKIN_CODE_VIEW))]
+OpsViewer = Annotated[CurrentUser, Depends(require(PERM_OPS_VIEW))]
+SettingsAdmin = Annotated[CurrentUser, Depends(require(PERM_SETTINGS_MANAGE))]
+
+
 @router.get("/seats/availability", response_model=AvailabilityOut)
 def seat_availability(
     start_at: datetime,
     hours: int,
+    user: Student,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
     room_id: int | None = None,
     outlet_type: Literal["none", "fixed", "rail"] | None = None,
     has_outlet: bool | None = None,
     only_available: bool = False,
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
 ) -> AvailabilityOut:
     settings = load_settings(session)
     slot = make_slot(start_at, hours, tz, settings)
@@ -123,13 +140,13 @@ def _to_out(reservation, seat, room, tz: ZoneInfo) -> ReservationOut:
 def create_reservation(
     body: ReservationCreate,
     response: Response,
-    idempotency_key: str | None = Header(
-        default=None, alias="Idempotency-Key", min_length=1, max_length=128
-    ),
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    user: Student,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
+    idempotency_key: Annotated[
+        str | None, Header(alias="Idempotency-Key", min_length=1, max_length=128)
+    ] = None,
 ) -> ReservationOut:
     reservation, created = reservations.create(
         session,
@@ -148,12 +165,12 @@ def create_reservation(
 
 @router.get("/reservations/me", response_model=ReservationList)
 def my_reservations(
+    user: Student,
+    session: DbSession,
+    tz: BusinessTz,
     status: Literal["booked", "checked_in", "cancelled", "no_show"] | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ReservationList:
     rows = repository.user_reservations(session, user.id, status=status, limit=limit, offset=offset)
     return ReservationList(items=[_to_out(*row, tz) for row in rows], limit=limit, offset=offset)
@@ -162,9 +179,9 @@ def my_reservations(
 @router.get("/reservations/{reservation_id}", response_model=ReservationOut)
 def get_reservation(
     reservation_id: int,
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    user: Student,
+    session: DbSession,
+    tz: BusinessTz,
 ) -> ReservationOut:
     found = repository.reservation_with_place(session, reservation_id)
     if found is None or found[0].user_id != user.id:
@@ -175,10 +192,10 @@ def get_reservation(
 @router.post("/reservations/{reservation_id}/cancel", response_model=ReservationOut)
 def cancel_reservation(
     reservation_id: int,
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    user: Student,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
 ) -> ReservationOut:
     reservation = reservations.cancel(session, user, reservation_id, now=clock.now())
     return _reservation_out(session, reservation, tz)
@@ -189,10 +206,10 @@ def check_in(
     reservation_id: int,
     body: CheckInRequest,
     request: Request,
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    user: Student,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
 ) -> ReservationOut:
     reservation = checkin.check_in(
         session,
@@ -210,28 +227,36 @@ def check_in(
 def room_checkin_code(
     room_id: int,
     request: Request,
-    _user: CurrentUser = Depends(require(PERM_CHECKIN_CODE_VIEW)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    _user: CheckinCodeViewer,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
 ) -> RoomCodeOut:
     """For the room's display terminal or room admins, not for students."""
     result = checkin.room_code(
         session, request.app.state.config.checkin_code_secret, room_id, now=clock.now(), tz=tz
     )
     return RoomCodeOut(
-        room_id=result.room_id, date=result.day.isoformat(), code=result.code, valid_until=result.valid_until
+        room_id=result.room_id,
+        date=result.day.isoformat(),
+        code=result.code,
+        valid_until=result.valid_until,
     )
 
 
 @router.get("/violations/me", response_model=list[ViolationOut])
 def my_violations(
-    user: CurrentUser = Depends(require(PERM_RESERVE)),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    user: Student,
+    session: DbSession,
+    tz: BusinessTz,
 ) -> list[ViolationOut]:
     return [
-        ViolationOut(id=v.id, reservation_id=v.reservation_id, reason=v.reason, occurred_at=v.occurred_at.astimezone(tz))
+        ViolationOut(
+            id=v.id,
+            reservation_id=v.reservation_id,
+            reason=v.reason,
+            occurred_at=v.occurred_at.astimezone(tz),
+        )
         for v in repository.user_violations(session, user.id)
     ]
 
@@ -239,7 +264,9 @@ def my_violations(
 RestrictionSource = Literal["m2_approval", "m3_repair"]
 
 
-def _restriction_out(r: SeatRestriction, tz: ZoneInfo, affected: list[int] | None = None) -> RestrictionOut:
+def _restriction_out(
+    r: SeatRestriction, tz: ZoneInfo, affected: list[int] | None = None
+) -> RestrictionOut:
     def local(value):
         return value.astimezone(tz) if value is not None else None
 
@@ -259,16 +286,18 @@ def _restriction_out(r: SeatRestriction, tz: ZoneInfo, affected: list[int] | Non
     )
 
 
-@router.put("/restrictions/{source_type}/{source_id}", response_model=RestrictionOut, status_code=201)
+@router.put(
+    "/restrictions/{source_type}/{source_id}", response_model=RestrictionOut, status_code=201
+)
 def apply_restriction(
     source_type: RestrictionSource,
     source_id: str,
     body: RestrictionApply,
     response: Response,
-    user: CurrentUser = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    user: AnyUser,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
 ) -> RestrictionOut:
     """Called by M2 when an approval occupies a room, and by M3 when a repair starts."""
     restriction, created, affected = restrictions.apply(
@@ -293,9 +322,9 @@ def apply_restriction(
 def read_restriction(
     source_type: RestrictionSource,
     source_id: str,
-    user: CurrentUser = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    user: AnyUser,
+    session: DbSession,
+    tz: BusinessTz,
 ) -> RestrictionOut:
     """Lets the caller confirm the outcome after a timeout before retrying."""
     return _restriction_out(restrictions.get(session, user, source_type, source_id), tz)
@@ -306,10 +335,10 @@ def release_restriction(
     source_type: RestrictionSource,
     source_id: str,
     body: RestrictionRelease,
-    user: CurrentUser = Depends(get_current_user),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
-    tz: ZoneInfo = Depends(business_tz),
+    user: AnyUser,
+    session: DbSession,
+    clock: AppClock,
+    tz: BusinessTz,
 ) -> RestrictionOut:
     """Called by M2 on rejection/revocation and by M3 when a repair passes acceptance."""
     restriction, _ = restrictions.release(
@@ -320,8 +349,8 @@ def release_restriction(
 
 @router.get("/settings", response_model=SettingsOut)
 def read_settings(
-    _user: CurrentUser = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    _user: AnyUser,
+    session: DbSession,
 ) -> SettingsOut:
     return SettingsOut(**as_dict(load_settings(session)))
 
@@ -329,9 +358,9 @@ def read_settings(
 @router.put("/settings", response_model=SettingsOut)
 def update_settings(
     body: SettingsUpdate,
-    user: CurrentUser = Depends(require(PERM_SETTINGS_MANAGE)),
-    session: Session = Depends(get_session),
-    clock: Clock = Depends(get_clock),
+    user: SettingsAdmin,
+    session: DbSession,
+    clock: AppClock,
 ) -> SettingsOut:
     changes = body.model_dump(exclude_none=True)
     updated = m1_settings.update(session, changes, actor_id=user.id, now=clock.now())
@@ -340,10 +369,10 @@ def update_settings(
 
 @router.get("/ops/usage", response_model=UsageOut)
 def usage(
-    day: date = Query(alias="date"),
-    _user: CurrentUser = Depends(require(PERM_OPS_VIEW)),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    day: Annotated[date, Query(alias="date")],
+    _user: OpsViewer,
+    session: DbSession,
+    tz: BusinessTz,
 ) -> UsageOut:
     rooms = [RoomUsageOut(**row) for row in ops.daily_usage(session, day, tz)]
     return UsageOut(date=day.isoformat(), rooms=rooms)
@@ -352,11 +381,11 @@ def usage(
 @router.get("/ops/seat-events", response_model=list[SeatEventOut])
 def seat_events(
     room_id: int,
+    _user: OpsViewer,
+    session: DbSession,
+    tz: BusinessTz,
     seat_id: int | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-    _user: CurrentUser = Depends(require(PERM_OPS_VIEW)),
-    session: Session = Depends(get_session),
-    tz: ZoneInfo = Depends(business_tz),
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[SeatEventOut]:
     """Where each availability change came from: M1 booking, M2 approval or M3 repair."""
     return [

@@ -6,6 +6,7 @@ Create Date: 2026-10-27
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0001_resources_placeholder"
@@ -26,11 +27,17 @@ def upgrade() -> None:
         sa.Column("open_time", sa.Time(), nullable=False),
         sa.Column("close_time", sa.Time(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_rooms"),
         sa.UniqueConstraint("code", name="uq_rooms_code"),
-        sa.CheckConstraint("access_scope IN ('campus', 'department')", name="ck_rooms_access_scope"),
+        sa.CheckConstraint(
+            "access_scope IN ('campus', 'department')", name="ck_rooms_access_scope"
+        ),
         sa.CheckConstraint(
             "access_scope = 'campus' OR department_id IS NOT NULL",
             name="ck_rooms_department_scope_has_id",
@@ -44,8 +51,12 @@ def upgrade() -> None:
         sa.Column("code", sa.String(32), nullable=False),
         sa.Column("outlet_type", sa.String(16), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_seats"),
         sa.ForeignKeyConstraint(["room_id"], ["rooms.id"], name="fk_seats_room_id_rooms"),
         sa.UniqueConstraint("room_id", "code", name="uq_seats_room_id_code"),

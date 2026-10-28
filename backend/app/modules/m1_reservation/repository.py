@@ -1,14 +1,18 @@
 """Data access for M1: overlap lookups and row locks used by the services."""
 
 from collections.abc import Iterable
-
 from datetime import datetime
 
 from sqlalchemy import Integer, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.common.resources.models import Room, Seat
-from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation, SeatRestriction, Violation
+from app.modules.m1_reservation.models import (
+    ACTIVE_STATUSES,
+    Reservation,
+    SeatRestriction,
+    Violation,
+)
 from app.modules.m1_reservation.timeslots import Slot
 
 # Advisory lock namespaces (first key of the two-int form).
@@ -97,11 +101,17 @@ def user_reservations(
     )
     if status is not None:
         query = query.where(Reservation.status == status)
-    query = query.order_by(Reservation.start_at.desc(), Reservation.id.desc()).limit(limit).offset(offset)
+    query = (
+        query.order_by(Reservation.start_at.desc(), Reservation.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return list(session.execute(query).tuples())
 
 
-def reservation_with_place(session: Session, reservation_id: int) -> tuple[Reservation, Seat, Room] | None:
+def reservation_with_place(
+    session: Session, reservation_id: int
+) -> tuple[Reservation, Seat, Room] | None:
     query = (
         select(Reservation, Seat, Room)
         .join(Seat, Reservation.seat_id == Seat.id)
@@ -112,12 +122,19 @@ def reservation_with_place(session: Session, reservation_id: int) -> tuple[Reser
 
 
 def user_violations(session: Session, user_id: str) -> list[Violation]:
-    query = select(Violation).where(Violation.user_id == user_id).order_by(Violation.occurred_at.desc())
+    query = (
+        select(Violation).where(Violation.user_id == user_id).order_by(Violation.occurred_at.desc())
+    )
     return list(session.scalars(query))
 
 
 def restrictions_in_effect(
-    session: Session, room_ids: Iterable[int], start_at: datetime, end_at: datetime, *, since: datetime | None = None
+    session: Session,
+    room_ids: Iterable[int],
+    start_at: datetime,
+    end_at: datetime,
+    *,
+    since: datetime | None = None,
 ) -> list[SeatRestriction]:
     """Restrictions on these rooms overlapping [start_at, end_at).
 

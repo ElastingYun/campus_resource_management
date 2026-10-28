@@ -13,7 +13,10 @@ from tests.m1.conftest import DEFAULT_NOW, SH, local
 
 
 def _race(engine, attempts):
-    """Run each (user_id, seat_id, start, hours, key) booking in its own thread and session at once."""
+    """Run each (user_id, seat_id, start, hours, key) booking at once.
+
+    Every attempt gets its own thread and its own database session.
+    """
     factory = sessionmaker(engine, expire_on_commit=False)
     barrier = threading.Barrier(len(attempts))
 
@@ -24,8 +27,14 @@ def _race(engine, attempts):
             barrier.wait()
             try:
                 reservation, created = reservations.create(
-                    session, user, seat_id=seat_id, start_at=start, hours=hours,
-                    idempotency_key=key, now=DEFAULT_NOW, tz=SH,
+                    session,
+                    user,
+                    seat_id=seat_id,
+                    start_at=start,
+                    hours=hours,
+                    idempotency_key=key,
+                    now=DEFAULT_NOW,
+                    tz=SH,
                 )
                 return ("created" if created else "replayed", reservation.id)
             except M1Error as err:
@@ -58,7 +67,8 @@ def _overlapping_active_pairs(engine):
                 "SELECT count(*) FROM m1_reservations a JOIN m1_reservations b "
                 "ON a.seat_id = b.seat_id AND a.id < b.id "
                 "AND a.start_at < b.end_at AND b.start_at < a.end_at "
-                "WHERE a.status IN ('booked', 'checked_in') AND b.status IN ('booked', 'checked_in')"
+                "WHERE a.status IN ('booked', 'checked_in') "
+                "AND b.status IN ('booked', 'checked_in')"
             )
         ).scalar_one()
 
@@ -66,8 +76,12 @@ def _overlapping_active_pairs(engine):
 def test_partially_overlapping_races_still_cannot_double_book(engine, seeded):
     seat = seeded["seats"]["LIB-101-01"]
     # Every pair shares 10:00-11:00, so at most one may win.
-    attempts = [("stu-a", seat, local(2, 10), 2, None), ("stu-b", seat, local(2, 9), 2, None),
-                ("stu-c", seat, local(2, 10), 1, None), ("stu-d", seat, local(2, 8), 4, None)]
+    attempts = [
+        ("stu-a", seat, local(2, 10), 2, None),
+        ("stu-b", seat, local(2, 9), 2, None),
+        ("stu-c", seat, local(2, 10), 1, None),
+        ("stu-d", seat, local(2, 8), 4, None),
+    ]
     results = _race(engine, attempts)
     assert [code for code, _ in results].count("created") == 1
     assert _active_count(engine) == 1
@@ -76,8 +90,10 @@ def test_partially_overlapping_races_still_cannot_double_book(engine, seeded):
 
 def test_one_user_racing_for_two_seats_gets_only_one(engine, seeded):
     seats = seeded["seats"]
-    attempts = [("stu-a", seats["LIB-101-01"], local(2, 10), 2, None),
-                ("stu-a", seats["A-201-01"], local(2, 10), 2, None)]
+    attempts = [
+        ("stu-a", seats["LIB-101-01"], local(2, 10), 2, None),
+        ("stu-a", seats["A-201-01"], local(2, 10), 2, None),
+    ]
     outcomes = sorted(code for code, _ in _race(engine, attempts))
     assert outcomes == ["created", "user_overlap"]
 

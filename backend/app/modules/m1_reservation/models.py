@@ -1,11 +1,19 @@
 """M1-owned tables. Other modules must use M1's HTTP API, never these tables."""
 
 from datetime import datetime
-
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, String
-from sqlalchemy import UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -112,7 +120,9 @@ class NotificationOutbox(Base):
 
     __tablename__ = "m1_notification_outbox"
     __table_args__ = (
-        UniqueConstraint("reservation_id", "kind", name="uq_m1_notification_outbox_reservation_kind"),
+        UniqueConstraint(
+            "reservation_id", "kind", name="uq_m1_notification_outbox_reservation_kind"
+        ),
         Index("ix_m1_notification_outbox_pending", "dispatched_at", "id"),
     )
 
@@ -140,7 +150,9 @@ class SeatRestriction(Base):
         CheckConstraint("source_type IN ('m2_approval', 'm3_repair')", name="source_type"),
         CheckConstraint("status IN ('active', 'released')", name="status"),
         CheckConstraint("end_at IS NULL OR start_at < end_at", name="start_before_end"),
-        CheckConstraint("source_type <> 'm2_approval' OR end_at IS NOT NULL", name="approval_has_end"),
+        CheckConstraint(
+            "source_type <> 'm2_approval' OR end_at IS NOT NULL", name="approval_has_end"
+        ),
         Index("ix_m1_seat_restrictions_room_status", "room_id", "status"),
     )
 

@@ -1,5 +1,3 @@
-import threading
-
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from app.modules.m1_reservation import reservations, restrictions
 from app.modules.m1_reservation.errors import M1Error
 from app.modules.m1_reservation.identity import PERM_RESERVE, CurrentUser
-from tests.m1.conftest import SH, auth, local
+from tests.m1.conftest import SH, auth, local, run_together
 from tests.m1.test_jobs import run, status_of, violation_count
 from tests.m1.test_reservations_api import book
 
@@ -30,7 +28,9 @@ def release(client, source_type, source_id, reason=None, headers=None):
     if reason is None:
         reason = "accepted" if source_type == "m3_repair" else "done"
     who = headers or (M2 if source_type == "m2_approval" else M3)
-    return client.post(f"{BASE}/{source_type}/{source_id}/release", json={"reason": reason}, headers=who)
+    return client.post(
+        f"{BASE}/{source_type}/{source_id}/release", json={"reason": reason}, headers=who
+    )
 
 
 def seats_at(client, room_id, start, hours=1):
@@ -49,7 +49,11 @@ def test_m2_approval_blocks_the_whole_room_only_within_its_window(client, clock,
     assert resp.json()["affected_reservation_ids"] == []
 
     inside = seats_at(client, lib, local(2, 11))
-    assert all(s["reasons"] == [{"code": "m2_approval", "source_type": "m2_approval", "source_id": "APR-1"}] for s in inside)
+    assert all(
+        s["reasons"]
+        == [{"code": "m2_approval", "source_type": "m2_approval", "source_id": "APR-1"}]
+        for s in inside
+    )
     assert all(s["available"] for s in seats_at(client, lib, local(2, 12)))
     assert all(s["available"] for s in seats_at(client, a201, local(2, 11)))
 
@@ -121,9 +125,9 @@ def test_repair_requires_acceptance_before_release(client, clock, seeded, engine
     assert client.get(f"{BASE}/m3_repair/WO-1", headers=M3).json()["status"] == "active"
     assert not any(s["available"] for s in seats_at(client, lib, local(6, 20)))
     with engine.connect() as connection:
-        count = connection.execute(text(
-            "SELECT count(*) FROM m1_seat_state_events WHERE action = 'restriction_released'"
-        )).scalar_one()
+        count = connection.execute(
+            text("SELECT count(*) FROM m1_seat_state_events WHERE action = 'restriction_released'")
+        ).scalar_one()
     assert count == 0
     assert release(client, "m3_repair", "WO-1", "accepted").status_code == 200
     assert all(s["available"] for s in seats_at(client, lib, local(6, 20)))
@@ -147,7 +151,9 @@ def test_release_is_idempotent_and_unknown_sources_are_404(client, clock, seeded
     assert release(client, "m3_repair", "WO-1").status_code == 200
     assert release(client, "m3_repair", "WO-404").status_code == 404
     with engine.connect() as conn:
-        n = conn.execute(text("SELECT count(*) FROM m1_seat_state_events WHERE action = 'restriction_released'")).scalar_one()
+        n = conn.execute(
+            text("SELECT count(*) FROM m1_seat_state_events WHERE action = 'restriction_released'")
+        ).scalar_one()
     assert n == 1
 
 
@@ -156,7 +162,12 @@ def test_callers_may_only_touch_their_own_source_type(client, clock, seeded):
     apply(client, "m3_repair", "WO-1", lib, local(2, 8))
     assert release(client, "m3_repair", "WO-1", headers=M2).status_code == 403
     assert apply(client, "m3_repair", "WO-2", lib, local(2, 8), headers=M2).status_code == 403
-    assert apply(client, "m2_approval", "APR-1", lib, local(2, 10), local(2, 12), headers=auth()).status_code == 403
+    assert (
+        apply(
+            client, "m2_approval", "APR-1", lib, local(2, 10), local(2, 12), headers=auth()
+        ).status_code
+        == 403
+    )
     assert client.get(f"{BASE}/m3_repair/WO-1", headers=M3).json()["status"] == "active"
     assert client.get(f"{BASE}/m3_repair/WO-1", headers=M2).status_code == 403
 
@@ -165,8 +176,16 @@ def test_invalid_restrictions_are_rejected(client, clock, seeded):
     lib, other_seat = seeded["rooms"]["LIB-101"], seeded["seats"]["A-201-01"]
     cases = [
         (apply(client, "m2_approval", "APR-1", lib, local(2, 10)), 422, "end_required"),
-        (apply(client, "m2_approval", "APR-2", lib, local(2, 10), local(2, 10)), 422, "invalid_interval"),
-        (apply(client, "m3_repair", "WO-1", lib, local(2, 8), seat_id=other_seat), 422, "room_scope_required"),
+        (
+            apply(client, "m2_approval", "APR-2", lib, local(2, 10), local(2, 10)),
+            422,
+            "invalid_interval",
+        ),
+        (
+            apply(client, "m3_repair", "WO-1", lib, local(2, 8), seat_id=other_seat),
+            422,
+            "room_scope_required",
+        ),
         (apply(client, "m3_repair", "WO-2", 999999, local(2, 8)), 404, "room_not_found"),
         (apply(client, "m3_repair", "bad id!", lib, local(2, 8)), 422, "invalid_source_id"),
     ]
@@ -177,7 +196,9 @@ def test_invalid_restrictions_are_rejected(client, clock, seeded):
 def test_existing_reservations_are_reported_not_cancelled(client, clock, seeded):
     lib = seeded["rooms"]["LIB-101"]
     inside = book(client, seeded["seats"]["LIB-101-01"], local(2, 10), 2).json()["id"]
-    book(client, seeded["seats"]["LIB-101-02"], local(2, 8), 2, headers=auth("stu-002"))  # ends before
+    book(
+        client, seeded["seats"]["LIB-101-02"], local(2, 8), 2, headers=auth("stu-002")
+    )  # ends before
     resp = apply(client, "m2_approval", "APR-1", lib, local(2, 11), local(2, 13))
     assert resp.json()["affected_reservation_ids"] == [inside]
     assert status_of(client, inside)["status"] == "booked"
@@ -191,7 +212,10 @@ def test_every_source_is_traceable_in_the_state_trail(client, clock, seeded, eng
     release(client, "m3_repair", "WO-1", "accepted")
     with engine.connect() as conn:
         trail = conn.execute(
-            text("SELECT source_type, source_id, action, actor_id FROM m1_seat_state_events ORDER BY id")
+            text(
+                "SELECT source_type, source_id, action, actor_id "
+                "FROM m1_seat_state_events ORDER BY id"
+            )
         ).all()
     assert [tuple(t) for t in trail] == [
         ("m1_reservation", str(rid), "reserved", "stu-001"),
@@ -215,7 +239,9 @@ def test_no_violation_when_the_room_was_under_repair(client, clock, seeded, engi
     assert violation_count(engine) == 0
 
 
-def test_restriction_lifted_before_the_slot_does_not_excuse_a_no_show(client, clock, seeded, engine):
+def test_restriction_lifted_before_the_slot_does_not_excuse_a_no_show(
+    client, clock, seeded, engine
+):
     lib = seeded["rooms"]["LIB-101"]
     rid = book(client, seeded["seats"]["LIB-101-01"], local(2, 10)).json()["id"]
     apply(client, "m3_repair", "WO-1", lib, local(2, 7, 30))
@@ -226,41 +252,63 @@ def test_restriction_lifted_before_the_slot_does_not_excuse_a_no_show(client, cl
     assert violation_count(engine) == 1
 
 
+def _race_booking_with_approval(factory, student, service, seat_id, room_id, source_id, start, end):
+    """A booking and an M2 approval for the same room and window, released together."""
+
+    def book_seat():
+        with factory() as session:
+            try:
+                reservation, _ = reservations.create(
+                    session,
+                    student,
+                    seat_id=seat_id,
+                    start_at=start,
+                    hours=2,
+                    idempotency_key=None,
+                    now=local(2, 7),
+                    tz=SH,
+                )
+                return reservation.id
+            except M1Error as err:
+                return err.code
+
+    def approve_room():
+        with factory() as session:
+            _, _, affected = restrictions.apply(
+                session,
+                service,
+                "m2_approval",
+                source_id,
+                room_id=room_id,
+                seat_id=None,
+                start_at=start,
+                end_at=end,
+                note="",
+                now=local(2, 7),
+                tz=SH,
+            )
+            return affected
+
+    return run_together(book_seat, approve_room)
+
+
 def test_booking_racing_a_restriction_is_refused_or_reported(engine, seeded):
     factory = sessionmaker(engine, expire_on_commit=False)
     svc = CurrentUser("svc-m2", None, frozenset({restrictions.PERMISSIONS["m2_approval"]}))
     lib = seeded["rooms"]["LIB-101"]
     for i in range(7):  # each round races in its own window: 08-10, 10-12, ... 20-22
-        start, end = local(3, 8 + 2 * i), local(3, 10 + 2 * i)
         student = CurrentUser(f"stu-r{i}", None, frozenset({PERM_RESERVE}))
-        barrier = threading.Barrier(2)
-        out = {}
-
-        def do_book(i=i, student=student, start=start):
-            with factory() as s:
-                barrier.wait()
-                try:
-                    r, _ = reservations.create(
-                        s, student, seat_id=seeded["seats"][f"LIB-101-{i + 1:02d}"], start_at=start,
-                        hours=2, idempotency_key=None, now=local(2, 7), tz=SH,
-                    )
-                    out["booked"] = r.id
-                except M1Error as err:
-                    out["booked"] = err.code
-
-        def do_apply(i=i, start=start, end=end):
-            with factory() as s:
-                barrier.wait()
-                _, _, affected = restrictions.apply(
-                    s, svc, "m2_approval", f"APR-R{i}", room_id=lib, seat_id=None, start_at=start,
-                    end_at=end, note="", now=local(2, 7), tz=SH,
-                )
-                out["affected"] = affected
-
-        threads = [threading.Thread(target=do_book), threading.Thread(target=do_apply)]
-        [t.start() for t in threads]
-        [t.join() for t in threads]
-        if isinstance(out["booked"], int):
-            assert out["booked"] in out["affected"]
+        booked, affected = _race_booking_with_approval(
+            factory,
+            student,
+            svc,
+            seeded["seats"][f"LIB-101-{i + 1:02d}"],
+            lib,
+            f"APR-R{i}",
+            local(3, 8 + 2 * i),
+            local(3, 10 + 2 * i),
+        )
+        if isinstance(booked, int):
+            assert booked in affected
         else:
-            assert out["booked"] == "seat_restricted"
+            assert booked == "seat_restricted"

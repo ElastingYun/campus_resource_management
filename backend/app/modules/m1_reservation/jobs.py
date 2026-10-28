@@ -12,7 +12,7 @@ no-show deadline is reached only the no-show rule applies.
 import argparse
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -47,7 +47,13 @@ def _enqueue(session: Session, reservation: Reservation, kind: str, now: datetim
     }
     stmt = (
         insert(NotificationOutbox)
-        .values(reservation_id=reservation.id, user_id=reservation.user_id, kind=kind, payload=payload, created_at=now)
+        .values(
+            reservation_id=reservation.id,
+            user_id=reservation.user_id,
+            kind=kind,
+            payload=payload,
+            created_at=now,
+        )
         .on_conflict_do_nothing(index_elements=["reservation_id", "kind"])
         .returning(NotificationOutbox.id)
     )
@@ -67,7 +73,11 @@ def _claim_booked(session: Session, *conditions) -> list[Reservation]:
 def _blocked_by_restriction(session: Session, reservation: Reservation) -> list[dict[str, str]]:
     """Restrictions in force on this seat at any time since the reservation started."""
     in_force = repository.restrictions_in_effect(
-        session, [reservation.room_id], reservation.start_at, reservation.end_at, since=reservation.start_at
+        session,
+        [reservation.room_id],
+        reservation.start_at,
+        reservation.end_at,
+        since=reservation.start_at,
     )
     return [
         {"source_type": r.source_type, "source_id": r.source_id}
@@ -110,7 +120,12 @@ def _no_shows(session: Session, now: datetime, settings: M1Settings, report: Job
         reservation.updated_at = now
         inserted = session.execute(
             insert(Violation)
-            .values(reservation_id=reservation.id, user_id=reservation.user_id, reason="no_show", occurred_at=now)
+            .values(
+                reservation_id=reservation.id,
+                user_id=reservation.user_id,
+                reason="no_show",
+                occurred_at=now,
+            )
             .on_conflict_do_nothing(index_elements=["reservation_id"])
             .returning(Violation.id)
         ).scalar_one_or_none()
@@ -120,7 +135,9 @@ def _no_shows(session: Session, now: datetime, settings: M1Settings, report: Job
         report.no_shows += 1
 
 
-def _late_reminders(session: Session, now: datetime, settings: M1Settings, report: JobReport) -> None:
+def _late_reminders(
+    session: Session, now: datetime, settings: M1Settings, report: JobReport
+) -> None:
     for reservation in _claim_booked(
         session,
         Reservation.start_at <= now - timedelta(minutes=settings.late_remind_minutes),
@@ -129,7 +146,9 @@ def _late_reminders(session: Session, now: datetime, settings: M1Settings, repor
         report.late_reminders += _enqueue(session, reservation, "reminder_not_checked_in", now)
 
 
-def _pre_start_reminders(session: Session, now: datetime, settings: M1Settings, report: JobReport) -> None:
+def _pre_start_reminders(
+    session: Session, now: datetime, settings: M1Settings, report: JobReport
+) -> None:
     for reservation in _claim_booked(
         session,
         Reservation.start_at <= now + timedelta(minutes=settings.remind_before_minutes),
@@ -149,14 +168,16 @@ def run_due(session: Session, now: datetime) -> JobReport:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--loop", type=int, metavar="SECONDS", help="repeat forever with this interval")
+    parser.add_argument(
+        "--loop", type=int, metavar="SECONDS", help="repeat forever with this interval"
+    )
     args = parser.parse_args(argv)
 
     engine = make_engine(load_config().database_url)
     factory = make_sessionmaker(engine)
     while True:
         with factory() as session:
-            report = run_due(session, datetime.now(timezone.utc))
+            report = run_due(session, datetime.now(UTC))
         print(f"m1 jobs: {report}", flush=True)
         if not args.loop:
             break

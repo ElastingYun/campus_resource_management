@@ -1,4 +1,7 @@
-"""Request/response models of the M1 public HTTP API (contract: docs/architecture/a-m1-api-v1.md)."""
+"""Request/response models of the M1 public HTTP API.
+
+Contract: docs/architecture/a-m1-api-v1.md
+"""
 
 from datetime import datetime
 

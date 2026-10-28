@@ -5,7 +5,7 @@ overlap one starting at 10:00. All stored datetimes are timezone-aware.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.modules.m1_reservation.errors import M1Error
@@ -37,7 +37,7 @@ def make_slot(start_at: datetime, hours: int, tz: ZoneInfo, settings: M1Settings
             f"单次预约时长必须为 1 到 {settings.max_hours} 小时",
             {"max_hours": settings.max_hours},
         )
-    start = local.astimezone(timezone.utc)
+    start = local.astimezone(UTC)
     return Slot(start_at=start, end_at=start + timedelta(hours=hours), hours=hours)
 
 

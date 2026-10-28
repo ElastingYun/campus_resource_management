@@ -6,8 +6,9 @@ Create Date: 2026-10-27
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "0004_m1_violations_and_outbox"
 down_revision = "0003_m1_seat_state_events"
@@ -25,7 +26,9 @@ def upgrade() -> None:
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id", name="pk_m1_violations"),
         sa.ForeignKeyConstraint(
-            ["reservation_id"], ["m1_reservations.id"], name="fk_m1_violations_reservation_id_m1_reservations"
+            ["reservation_id"],
+            ["m1_reservations.id"],
+            name="fk_m1_violations_reservation_id_m1_reservations",
         ),
         sa.UniqueConstraint("reservation_id", name="uq_m1_violations_reservation_id"),
     )
@@ -45,7 +48,9 @@ def upgrade() -> None:
             ["m1_reservations.id"],
             name="fk_m1_notification_outbox_reservation_id_m1_reservations",
         ),
-        sa.UniqueConstraint("reservation_id", "kind", name="uq_m1_notification_outbox_reservation_kind"),
+        sa.UniqueConstraint(
+            "reservation_id", "kind", name="uq_m1_notification_outbox_reservation_kind"
+        ),
     )
     op.create_index(
         "ix_m1_notification_outbox_pending", "m1_notification_outbox", ["dispatched_at", "id"]

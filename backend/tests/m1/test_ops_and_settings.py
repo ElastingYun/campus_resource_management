@@ -11,7 +11,9 @@ ADMIN = auth("admin-01", perms=(PERM_SETTINGS_MANAGE,))
 
 def test_daily_usage_aggregates_by_room_without_personal_data(client, clock, seeded, engine):
     seats, lib = seeded["seats"], seeded["rooms"]["LIB-101"]
-    present = book(client, seats["LIB-101-01"], local(2, 10), 2, headers=auth("stu-001")).json()["id"]
+    present = book(client, seats["LIB-101-01"], local(2, 10), 2, headers=auth("stu-001")).json()[
+        "id"
+    ]
     book(client, seats["LIB-101-02"], local(2, 10), 1, headers=auth("stu-002"))  # becomes a no-show
     gone = book(client, seats["LIB-101-03"], local(2, 14), 1, headers=auth("stu-003")).json()["id"]
     client.post(f"/api/v1/m1/reservations/{gone}/cancel", headers=auth("stu-003"))
@@ -32,17 +34,31 @@ def test_daily_usage_aggregates_by_room_without_personal_data(client, clock, see
 
 
 def test_ops_views_require_ops_permission(client, clock, seeded):
-    assert client.get("/api/v1/m1/ops/usage", params={"date": "2026-11-02"}, headers=auth()).status_code == 403
+    assert (
+        client.get(
+            "/api/v1/m1/ops/usage", params={"date": "2026-11-02"}, headers=auth()
+        ).status_code
+        == 403
+    )
     room = seeded["rooms"]["LIB-101"]
-    assert client.get("/api/v1/m1/ops/seat-events", params={"room_id": room}, headers=auth()).status_code == 403
+    assert (
+        client.get(
+            "/api/v1/m1/ops/seat-events", params={"room_id": room}, headers=auth()
+        ).status_code
+        == 403
+    )
 
 
 def test_seat_trail_shows_sources_and_hides_students(client, clock, seeded):
     lib, seat = seeded["rooms"]["LIB-101"], seeded["seats"]["LIB-101-01"]
     rid = book(client, seat, local(2, 14), 1).json()["id"]
     apply(client, "m3_repair", "WO-1", lib, local(2, 8))
-    book(client, seeded["seats"]["A-201-01"], local(2, 16), 1, headers=auth("stu-002"))  # other room
-    trail = client.get("/api/v1/m1/ops/seat-events", params={"room_id": lib, "seat_id": seat}, headers=OPS).json()
+    book(
+        client, seeded["seats"]["A-201-01"], local(2, 16), 1, headers=auth("stu-002")
+    )  # other room
+    trail = client.get(
+        "/api/v1/m1/ops/seat-events", params={"room_id": lib, "seat_id": seat}, headers=OPS
+    ).json()
     assert [(e["source_type"], e["source_id"], e["action"], e["actor_id"]) for e in trail] == [
         ("m3_repair", "WO-1", "restriction_applied", "svc-m3"),
         ("m1_reservation", str(rid), "reserved", None),
@@ -58,7 +74,9 @@ def test_admin_can_change_settings_and_the_change_applies(client, clock, seeded)
 
 
 def test_settings_changes_are_validated_and_restricted(client):
-    assert client.put("/api/v1/m1/settings", json={"max_hours": 2}, headers=auth()).status_code == 403
+    assert (
+        client.put("/api/v1/m1/settings", json={"max_hours": 2}, headers=auth()).status_code == 403
+    )
     for body in ({"max_hours": 0}, {"late_remind_minutes": 15}, {"no_show_minutes": 5}):
         resp = client.put("/api/v1/m1/settings", json=body, headers=ADMIN)
         assert resp.status_code == 422 and resp.json()["error"]["code"] == "invalid_setting", body
