@@ -8,6 +8,10 @@ if [[ "${CI:-}" != "true" || -z "${GITHUB_RUN_ID:-}" ]]; then
   exit 2
 fi
 : "${CAMPUS_DB_PASSWORD:?Set a synthetic CI database password}"
+# Explicit synthetic profile: validates C wiring, not approved production policies.
+export CAMPUS_C_ENABLED=true
+export CAMPUS_C_CONFIG_FILE=app/modules/m2_approval/examples/runtime.synthetic.json
+export CAMPUS_RESOURCES_SERVICE_TOKEN=synthetic-ci-resource-service-token
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 compose=(docker compose --project-name "campus-ci-${GITHUB_RUN_ID}" -f infra/compose.yaml)
@@ -42,6 +46,33 @@ for asset in assets:
     with urllib.request.urlopen("http://127.0.0.1:8080" + asset, timeout=10) as response:
         assert response.status == 200 and response.read()
 print("PASS frontend assets, backend/proxy readiness, initial and repeated migration")
+CHECK
+
+"${compose[@]}" exec -T -e CAMPUS_BOOTSTRAP_PASSWORD=synthetic-ci-account-password backend \
+  python -m app.common.auth.bootstrap --username ci-student --department-id synthetic-department \
+  --roles-file app/modules/m2_approval/examples/roles.synthetic.json --role synthetic-student \
+  --password-env CAMPUS_BOOTSTRAP_PASSWORD
+
+python3 - <<'CHECK'
+import json
+import urllib.request
+
+for port in (8000, 8080):
+    root = f"http://127.0.0.1:{port}"
+    with urllib.request.urlopen(root + "/health/ready", timeout=10) as response:
+        assert json.load(response)["scope"] == "m2"
+    request = urllib.request.Request(root + "/api/v1/auth/sessions", data=json.dumps({
+        "username": "ci-student", "password": "synthetic-ci-account-password",
+    }).encode(), headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        session = json.load(response)
+        assert session["token_type"] == "bearer"
+    headers = {"Authorization": "Bearer " + session["access_token"]}
+    with urllib.request.urlopen(urllib.request.Request(root + "/api/v1/auth/me", headers=headers), timeout=10) as response:
+        assert json.load(response)["permissions"] == ["m2.submit"]
+    with urllib.request.urlopen(urllib.request.Request(root + "/api/v1/m2/applications", headers=headers), timeout=10) as response:
+        assert json.load(response) == []
+print("PASS C login, identity and authorized M2 list over backend and frontend proxy")
 CHECK
 
 "${compose[@]}" stop db
