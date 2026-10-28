@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SeatAvailabilityOut(BaseModel):
@@ -108,3 +108,43 @@ class RestrictionOut(BaseModel):
     release_reason: str | None
     # Active personal reservations overlapping this restriction (apply responses only).
     affected_reservation_ids: list[int] | None = None
+
+
+class SettingsUpdate(BaseModel):
+    """Partial update; unknown keys are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_hours: int | None = None
+    booking_horizon_days: int | None = None
+    remind_before_minutes: int | None = None
+    late_remind_minutes: int | None = None
+    no_show_minutes: int | None = None
+    checkin_open_before_minutes: int | None = None
+
+
+class RoomUsageOut(BaseModel):
+    room_id: int
+    room_code: str
+    seat_count: int
+    reservations: dict[str, int]
+    checked_in_seat_hours: float
+    capacity_seat_hours: float
+    utilization: float
+
+
+class UsageOut(BaseModel):
+    date: str
+    rooms: list[RoomUsageOut]
+
+
+class SeatEventOut(BaseModel):
+    occurred_at: datetime
+    source_type: str
+    source_id: str
+    action: str
+    room_id: int
+    seat_id: int | None
+    start_at: datetime
+    end_at: datetime | None
+    actor_id: str | None

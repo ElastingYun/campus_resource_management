@@ -1,6 +1,6 @@
 """M1 HTTP routes. Routes parse input and authorize; services hold the rules."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.modules.m1_reservation import availability, checkin, repository, reservations, restrictions
+from app.modules.m1_reservation import availability, checkin, ops, repository, reservations, restrictions
 from app.modules.m1_reservation.clock import Clock, get_clock
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
 from app.modules.m1_reservation.identity import (
     PERM_CHECKIN_CODE_VIEW,
+    PERM_OPS_VIEW,
     PERM_RESERVE,
+    PERM_SETTINGS_MANAGE,
     CurrentUser,
     get_current_user,
     require,
@@ -29,10 +31,15 @@ from app.modules.m1_reservation.schemas import (
     RestrictionOut,
     RestrictionRelease,
     RoomCodeOut,
+    RoomUsageOut,
     SeatAvailabilityOut,
+    SeatEventOut,
     SettingsOut,
+    SettingsUpdate,
+    UsageOut,
     ViolationOut,
 )
+from app.modules.m1_reservation import settings as m1_settings
 from app.modules.m1_reservation.settings import as_dict, load_settings
 from app.modules.m1_reservation.timeslots import check_booking_window, make_slot
 
@@ -317,6 +324,55 @@ def read_settings(
     session: Session = Depends(get_session),
 ) -> SettingsOut:
     return SettingsOut(**as_dict(load_settings(session)))
+
+
+@router.put("/settings", response_model=SettingsOut)
+def update_settings(
+    body: SettingsUpdate,
+    user: CurrentUser = Depends(require(PERM_SETTINGS_MANAGE)),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+) -> SettingsOut:
+    changes = body.model_dump(exclude_none=True)
+    updated = m1_settings.update(session, changes, actor_id=user.id, now=clock.now())
+    return SettingsOut(**as_dict(updated))
+
+
+@router.get("/ops/usage", response_model=UsageOut)
+def usage(
+    day: date = Query(alias="date"),
+    _user: CurrentUser = Depends(require(PERM_OPS_VIEW)),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> UsageOut:
+    rooms = [RoomUsageOut(**row) for row in ops.daily_usage(session, day, tz)]
+    return UsageOut(date=day.isoformat(), rooms=rooms)
+
+
+@router.get("/ops/seat-events", response_model=list[SeatEventOut])
+def seat_events(
+    room_id: int,
+    seat_id: int | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    _user: CurrentUser = Depends(require(PERM_OPS_VIEW)),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> list[SeatEventOut]:
+    """Where each availability change came from: M1 booking, M2 approval or M3 repair."""
+    return [
+        SeatEventOut(
+            occurred_at=e.occurred_at.astimezone(tz),
+            source_type=e.source_type,
+            source_id=e.source_id,
+            action=e.action,
+            room_id=e.room_id,
+            seat_id=e.seat_id,
+            start_at=e.start_at.astimezone(tz),
+            end_at=e.end_at.astimezone(tz) if e.end_at else None,
+            actor_id=ops.public_actor(e),
+        )
+        for e in ops.seat_events(session, room_id, seat_id, limit)
+    ]
 
 
 def register(app: FastAPI) -> None:

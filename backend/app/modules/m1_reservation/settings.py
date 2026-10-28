@@ -2,7 +2,10 @@
 
 from dataclasses import asdict, dataclass, fields, replace
 
+from datetime import datetime
+
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.modules.m1_reservation.errors import M1Error
@@ -52,3 +55,17 @@ def validate(candidate: M1Settings) -> None:
 
 def as_dict(settings: M1Settings) -> dict[str, int]:
     return asdict(settings)
+
+
+def update(session: Session, changes: dict[str, int], *, actor_id: str, now: datetime) -> M1Settings:
+    candidate = replace(load_settings(session), **changes)
+    validate(candidate)
+    for key, value in changes.items():
+        stmt = insert(Setting).values(key=key, value=value, updated_by=actor_id, updated_at=now)
+        session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["key"], set_={"value": value, "updated_by": actor_id, "updated_at": now}
+            )
+        )
+    session.commit()
+    return candidate
