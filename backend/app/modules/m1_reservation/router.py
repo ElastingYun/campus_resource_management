@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.modules.m1_reservation import availability, checkin, repository, reservations
+from app.modules.m1_reservation import availability, checkin, repository, reservations, restrictions
 from app.modules.m1_reservation.clock import Clock, get_clock
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
 from app.modules.m1_reservation.identity import (
@@ -18,13 +18,16 @@ from app.modules.m1_reservation.identity import (
     get_current_user,
     require,
 )
-from app.modules.m1_reservation.models import Reservation
+from app.modules.m1_reservation.models import Reservation, SeatRestriction
 from app.modules.m1_reservation.schemas import (
     AvailabilityOut,
     CheckInRequest,
     ReservationCreate,
     ReservationList,
     ReservationOut,
+    RestrictionApply,
+    RestrictionOut,
+    RestrictionRelease,
     RoomCodeOut,
     SeatAvailabilityOut,
     SettingsOut,
@@ -224,6 +227,88 @@ def my_violations(
         ViolationOut(id=v.id, reservation_id=v.reservation_id, reason=v.reason, occurred_at=v.occurred_at.astimezone(tz))
         for v in repository.user_violations(session, user.id)
     ]
+
+
+RestrictionSource = Literal["m2_approval", "m3_repair"]
+
+
+def _restriction_out(r: SeatRestriction, tz: ZoneInfo, affected: list[int] | None = None) -> RestrictionOut:
+    def local(value):
+        return value.astimezone(tz) if value is not None else None
+
+    return RestrictionOut(
+        source_type=r.source_type,
+        source_id=r.source_id,
+        room_id=r.room_id,
+        seat_id=r.seat_id,
+        start_at=local(r.start_at),
+        end_at=local(r.end_at),
+        status=r.status,
+        note=r.note,
+        created_at=local(r.created_at),
+        released_at=local(r.released_at),
+        release_reason=r.release_reason,
+        affected_reservation_ids=affected,
+    )
+
+
+@router.put("/restrictions/{source_type}/{source_id}", response_model=RestrictionOut, status_code=201)
+def apply_restriction(
+    source_type: RestrictionSource,
+    source_id: str,
+    body: RestrictionApply,
+    response: Response,
+    user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> RestrictionOut:
+    """Called by M2 when an approval occupies a room, and by M3 when a repair starts."""
+    restriction, created, affected = restrictions.apply(
+        session,
+        user,
+        source_type,
+        source_id,
+        room_id=body.room_id,
+        seat_id=body.seat_id,
+        start_at=body.start_at,
+        end_at=body.end_at,
+        note=body.note,
+        now=clock.now(),
+        tz=tz,
+    )
+    if not created:
+        response.status_code = 200
+    return _restriction_out(restriction, tz, affected)
+
+
+@router.get("/restrictions/{source_type}/{source_id}", response_model=RestrictionOut)
+def read_restriction(
+    source_type: RestrictionSource,
+    source_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> RestrictionOut:
+    """Lets the caller confirm the outcome after a timeout before retrying."""
+    return _restriction_out(restrictions.get(session, user, source_type, source_id), tz)
+
+
+@router.post("/restrictions/{source_type}/{source_id}/release", response_model=RestrictionOut)
+def release_restriction(
+    source_type: RestrictionSource,
+    source_id: str,
+    body: RestrictionRelease,
+    user: CurrentUser = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> RestrictionOut:
+    """Called by M2 on rejection/revocation and by M3 when a repair passes acceptance."""
+    restriction, _ = restrictions.release(
+        session, user, source_type, source_id, reason=body.reason, now=clock.now()
+    )
+    return _restriction_out(restriction, tz)
 
 
 @router.get("/settings", response_model=SettingsOut)

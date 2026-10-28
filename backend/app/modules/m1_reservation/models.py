@@ -13,6 +13,7 @@ from app.db import Base
 
 ACTIVE_STATUSES = ("booked", "checked_in")
 SOURCE_TYPES = ("m1_reservation", "m2_approval", "m3_repair")
+RESTRICTION_SOURCES = ("m2_approval", "m3_repair")
 
 
 class Reservation(Base):
@@ -122,3 +123,38 @@ class NotificationOutbox(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SeatRestriction(Base):
+    """A block on booking written by another module through M1's API.
+
+    One row per source business object (an M2 approval, an M3 work order), so
+    releasing one source can never lift a block that another source still holds.
+    seat_id NULL blocks the whole room; end_at NULL means "until released"
+    (repairs end at acceptance, not at a known time).
+    """
+
+    __tablename__ = "m1_seat_restrictions"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_id", name="uq_m1_seat_restrictions_source"),
+        CheckConstraint("source_type IN ('m2_approval', 'm3_repair')", name="source_type"),
+        CheckConstraint("status IN ('active', 'released')", name="status"),
+        CheckConstraint("end_at IS NULL OR start_at < end_at", name="start_before_end"),
+        CheckConstraint("source_type <> 'm2_approval' OR end_at IS NOT NULL", name="approval_has_end"),
+        Index("ix_m1_seat_restrictions_room_status", "room_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(64))
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"))
+    seat_id: Mapped[int | None] = mapped_column(ForeignKey("seats.id"))
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_by: Mapped[str | None] = mapped_column(String(64))
+    release_reason: Mapped[str | None] = mapped_column(String(64))

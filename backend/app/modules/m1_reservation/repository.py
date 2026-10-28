@@ -2,11 +2,13 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import Integer, cast, func, select
+from datetime import datetime
+
+from sqlalchemy import Integer, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.common.resources.models import Room, Seat
-from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation, Violation
+from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation, SeatRestriction, Violation
 from app.modules.m1_reservation.timeslots import Slot
 
 # Advisory lock namespaces (first key of the two-int form).
@@ -105,3 +107,50 @@ def reservation_with_place(session: Session, reservation_id: int) -> tuple[Reser
 def user_violations(session: Session, user_id: str) -> list[Violation]:
     query = select(Violation).where(Violation.user_id == user_id).order_by(Violation.occurred_at.desc())
     return list(session.scalars(query))
+
+
+def restrictions_in_effect(
+    session: Session, room_ids: Iterable[int], start_at: datetime, end_at: datetime, *, since: datetime | None = None
+) -> list[SeatRestriction]:
+    """Restrictions on these rooms overlapping [start_at, end_at).
+
+    Only active ones by default; with `since`, also those released after that
+    moment (i.e. still in force at `since`).
+    """
+    ids = list(room_ids)
+    if not ids:
+        return []
+    in_force = SeatRestriction.status == "active"
+    if since is not None:
+        in_force = or_(in_force, SeatRestriction.released_at > since)
+    query = select(SeatRestriction).where(
+        SeatRestriction.room_id.in_(ids),
+        in_force,
+        SeatRestriction.start_at < end_at,
+        or_(SeatRestriction.end_at.is_(None), SeatRestriction.end_at > start_at),
+    )
+    return list(session.scalars(query.order_by(SeatRestriction.id)))
+
+
+def active_reservations_under(session: Session, restriction: SeatRestriction) -> list[int]:
+    query = select(Reservation.id).where(
+        Reservation.room_id == restriction.room_id,
+        Reservation.status.in_(ACTIVE_STATUSES),
+        Reservation.end_at > restriction.start_at,
+    )
+    if restriction.end_at is not None:
+        query = query.where(Reservation.start_at < restriction.end_at)
+    if restriction.seat_id is not None:
+        query = query.where(Reservation.seat_id == restriction.seat_id)
+    return list(session.scalars(query.order_by(Reservation.id)))
+
+
+def restriction_by_source(
+    session: Session, source_type: str, source_id: str, *, for_update: bool = False
+) -> SeatRestriction | None:
+    query = select(SeatRestriction).where(
+        SeatRestriction.source_type == source_type, SeatRestriction.source_id == source_id
+    )
+    if for_update:
+        query = query.with_for_update()
+    return session.scalar(query)

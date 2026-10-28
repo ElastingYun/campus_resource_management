@@ -48,10 +48,17 @@ def evaluate(
     tz: ZoneInfo,
 ) -> list[SeatAvailability]:
     reserved = repository.reserved_seat_ids(session, (seat.id for seat, _ in pairs), slot)
+    restrictions = repository.restrictions_in_effect(
+        session, {room.id for _, room in pairs}, slot.start_at, slot.end_at
+    )
     results = []
     for seat, room in pairs:
         reasons = static_blockers(seat, room, slot, user, tz)
         if seat.id in reserved:
             reasons.append({"code": "reserved"})
+        # Every source is listed: lifting one leaves the seat blocked by the others.
+        for r in restrictions:
+            if r.room_id == room.id and r.seat_id in (None, seat.id):
+                reasons.append({"code": r.source_type, "source_type": r.source_type, "source_id": r.source_id})
         results.append(SeatAvailability(seat=seat, room=room, reasons=reasons))
     return results

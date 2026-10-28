@@ -80,3 +80,31 @@ class ViolationOut(BaseModel):
     reservation_id: int
     reason: str
     occurred_at: datetime
+
+
+class RestrictionApply(BaseModel):
+    room_id: int
+    seat_id: int | None = None  # omit to restrict the whole room
+    start_at: datetime
+    end_at: datetime | None = None  # omit for "until released" (repairs only)
+    note: str = Field(default="", max_length=200)
+
+
+class RestrictionRelease(BaseModel):
+    reason: str = Field(min_length=1, max_length=64)
+
+
+class RestrictionOut(BaseModel):
+    source_type: str
+    source_id: str
+    room_id: int
+    seat_id: int | None
+    start_at: datetime
+    end_at: datetime | None
+    status: str
+    note: str
+    created_at: datetime
+    released_at: datetime | None
+    release_reason: str | None
+    # Active personal reservations overlapping this restriction (apply responses only).
+    affected_reservation_ids: list[int] | None = None

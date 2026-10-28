@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import load_config
 from app.db import make_engine, make_sessionmaker
-from app.modules.m1_reservation import events
+from app.modules.m1_reservation import events, repository
 from app.modules.m1_reservation.models import NotificationOutbox, Reservation, Violation
 from app.modules.m1_reservation.settings import M1Settings, load_settings
 
@@ -31,6 +31,7 @@ JOB_ACTOR = "system:m1-jobs"
 class JobReport:
     no_shows: int = 0
     violations: int = 0
+    restricted_cancellations: int = 0
     late_reminders: int = 0
     pre_start_reminders: int = 0
 
@@ -63,9 +64,46 @@ def _claim_booked(session: Session, *conditions) -> list[Reservation]:
     return list(session.scalars(query))
 
 
+def _blocked_by_restriction(session: Session, reservation: Reservation) -> list[dict[str, str]]:
+    """Restrictions in force on this seat at any time since the reservation started."""
+    in_force = repository.restrictions_in_effect(
+        session, [reservation.room_id], reservation.start_at, reservation.end_at, since=reservation.start_at
+    )
+    return [
+        {"source_type": r.source_type, "source_id": r.source_id}
+        for r in in_force
+        if r.seat_id in (None, reservation.seat_id)
+    ]
+
+
 def _no_shows(session: Session, now: datetime, settings: M1Settings, report: JobReport) -> None:
     deadline = now - timedelta(minutes=settings.no_show_minutes)
     for reservation in _claim_booked(session, Reservation.start_at <= deadline):
+        sources = _blocked_by_restriction(session, reservation)
+        if sources:
+            # PROVISIONAL (pending team decision): the student could not use a
+            # room under repair or taken by an approved booking, so release the
+            # seat without recording a violation.
+            reservation.status = "cancelled"
+            reservation.cancelled_at = now
+            reservation.cancel_reason = "restricted"
+            reservation.updated_at = now
+            _enqueue(session, reservation, "cancelled_restricted", now)
+            events.record(
+                session,
+                source_type="m1_reservation",
+                source_id=str(reservation.id),
+                action="restricted_released",
+                room_id=reservation.room_id,
+                seat_id=reservation.seat_id,
+                start_at=reservation.start_at,
+                end_at=reservation.end_at,
+                actor_id=JOB_ACTOR,
+                occurred_at=now,
+                detail={"restrictions": sources},
+            )
+            report.restricted_cancellations += 1
+            continue
         reservation.status = "no_show"
         reservation.cancelled_at = now
         reservation.cancel_reason = "no_show"
