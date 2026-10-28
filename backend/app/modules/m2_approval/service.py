@@ -6,11 +6,12 @@ from dataclasses import asdict
 from datetime import timedelta
 from uuid import UUID, uuid4
 
+from psycopg.types.json import Jsonb
+
 from app.common.audit.service import AuditService
 from app.common.auth.database import Database
 from app.common.auth.domain import Principal, ServiceError, aware, utcnow
 from app.modules.m2_approval.domain import ResourceGateway, Workflow, clean_text
-from psycopg.types.json import Jsonb
 
 PUBLIC_FIELDS = (
     "id",
@@ -33,6 +34,7 @@ PUBLIC_FIELDS = (
 def public(row):
     # Receipts and HTTP responses use the same JSON-safe representation.
     result = {key: row[key] for key in PUBLIC_FIELDS}
+    result["step_count"] = len(row["steps"])
     for key, value in result.items():
         if isinstance(value, UUID):
             result[key] = str(value)
@@ -76,9 +78,7 @@ class ApprovalService:
             (principal.subject_id, action, key),
         ).fetchone()
         if row and row["fingerprint"] != fingerprint:
-            raise ServiceError(
-                409, "IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同请求"
-            )
+            raise ServiceError(409, "IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同请求")
         return fingerprint, row["response"] if row else None
 
     def _save_receipt(self, conn, principal, action, key, fingerprint, row):
@@ -91,8 +91,7 @@ class ApprovalService:
 
     def _load(self, conn, application_id, *, lock=False):
         row = conn.execute(
-            "SELECT * FROM c_applications WHERE id=%s"
-            + (" FOR UPDATE" if lock else ""),
+            "SELECT * FROM c_applications WHERE id=%s" + (" FOR UPDATE" if lock else ""),
             (application_id,),
         ).fetchone()
         if not row:
@@ -106,29 +105,21 @@ class ApprovalService:
             and "m2.review" in principal.permissions
             and principal.covers(row["room_id"])
             and row["steps"][row["step_index"]]["permission"] in principal.permissions
-            and (
-                row["rules"]["allow_self_review"]
-                or row["applicant_id"] != principal.subject_id
-            )
+            and (row["rules"]["allow_self_review"] or row["applicant_id"] != principal.subject_id)
         )
 
     def _readable(self, principal, row):
         if (
             row["applicant_id"] == principal.subject_id
             or self._can_review(principal, row)
-            or (
-                "m2.read_all" in principal.permissions
-                and principal.covers(row["room_id"])
-            )
+            or ("m2.read_all" in principal.permissions and principal.covers(row["room_id"]))
         ):
             return
         raise ServiceError(404, "NOT_FOUND", "申请不存在或不可见")
 
     def _expired(self, row, now):
         return (
-            now >= row["deadline"]
-            if row["rules"]["deadline_inclusive"]
-            else now > row["deadline"]
+            now >= row["deadline"] if row["rules"]["deadline_inclusive"] else now > row["deadline"]
         )
 
     def _event(self, conn, row, event_type, now):
@@ -224,9 +215,7 @@ class ApprovalService:
         ]
         rules = {k: v for k, v in asdict(workflow).items() if k != "steps"}
         with self.database.transaction() as conn:
-            fingerprint, previous = self._receipt(
-                conn, principal, "submit", key, payload
-            )
+            fingerprint, previous = self._receipt(conn, principal, "submit", key, payload)
             if previous is not None:
                 return previous
             row = conn.execute(
@@ -257,6 +246,27 @@ class ApprovalService:
             row = self._load(conn, application_id)
             self._readable(principal, row)
             return public(row)
+
+    def actions(self, principal, application_id):
+        with self.database.transaction() as conn:
+            row = self._load(conn, application_id)
+            self._readable(principal, row)
+            allowed = []
+            if self._can_review(principal, row) and not self._expired(row, aware(self.clock())):
+                allowed.extend(("APPROVE", "REJECT"))
+            if (
+                "m2.revoke" in principal.permissions
+                and principal.covers(row["room_id"])
+                and row["rules"]["allow_revocation"]
+                and not row["revoked"]
+                and row["review_status"] in ("REVIEWING", "PASSED")
+            ):
+                allowed.append("REVOKE")
+            return {
+                "application_id": row["id"],
+                "version": row["version"],
+                "allowed_actions": allowed,
+            }
 
     def list_applications(self, principal, *, limit, offset, tasks_only=False):
         with self.database.transaction() as conn:
@@ -333,11 +343,7 @@ class ApprovalService:
             now = aware(self.clock())
             if self._expired(row, now):
                 raise ServiceError(409, "REVIEW_EXPIRED", "审批期限已到")
-            if (
-                decision == "REJECT"
-                and row["rules"]["require_rejection_reason"]
-                and not comment
-            ):
+            if decision == "REJECT" and row["rules"]["require_rejection_reason"] and not comment:
                 raise ServiceError(422, "REASON_REQUIRED", "请填写驳回理由")
             before = row["review_status"] + "/" + row["integration_status"]
             conn.execute(
@@ -362,9 +368,7 @@ class ApprovalService:
                 status = "REJECTED"
             elif index + 1 < len(row["steps"]):
                 index += 1
-                deadline = now + timedelta(
-                    seconds=row["steps"][index]["timeout_seconds"]
-                )
+                deadline = now + timedelta(seconds=row["steps"][index]["timeout_seconds"])
             else:
                 status, integration, generation = (
                     "PASSED",
@@ -379,9 +383,7 @@ class ApprovalService:
             ).fetchone()
             if integration == "APPLY_PENDING":
                 self._operation(conn, row, "APPLY", now)
-            self._audit(
-                conn, principal, row, "m2." + decision.lower(), before, now, request_id
-            )
+            self._audit(conn, principal, row, "m2." + decision.lower(), before, now, request_id)
             self._event(conn, row, "application." + decision.lower(), now)
             return self._save_receipt(conn, principal, action, key, fingerprint, row)
 
@@ -404,9 +406,7 @@ class ApprovalService:
                        updated_at=%s WHERE id=%s RETURNING *""",
                     (now, original["id"]),
                 ).fetchone()
-                self._audit(
-                    conn, None, row, "m2.timeout", "REVIEWING/NONE", now, str(uuid4())
-                )
+                self._audit(conn, None, row, "m2.timeout", "REVIEWING/NONE", now, str(uuid4()))
                 self._event(conn, row, "application.timed_out", now)
                 count += 1
         return count

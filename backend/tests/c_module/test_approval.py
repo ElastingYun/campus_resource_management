@@ -5,16 +5,16 @@ from threading import Barrier
 from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
+
 from app.common.auth.domain import ServiceError
 from app.modules.m2_approval.domain import Step, Workflow
-from conftest import submit
-from fastapi.testclient import TestClient
-from test_identity import login
+
+from .conftest import submit
+from .test_identity import login
 
 
-def decide(
-    case, application, reviewer="first", decision="APPROVE", key="decision-1", **updates
-):
+def decide(case, application, reviewer="first", decision="APPROVE", key="decision-1", **updates):
     payload = {
         "decision": decision,
         "comment": "合成审批意见",
@@ -33,15 +33,10 @@ def decide(
 def test_two_level_approval_is_not_occupancy_confirmation(case):
     application = submit(case)
     intermediate = decide(case, application)
-    assert (
-        intermediate["step_index"] == 1 and intermediate["review_status"] == "REVIEWING"
-    )
+    assert intermediate["step_index"] == 1 and intermediate["review_status"] == "REVIEWING"
     assert intermediate["integration_status"] == "NONE"
     final = decide(case, intermediate, reviewer="second", key="second")
-    assert (
-        final["review_status"] == "PASSED"
-        and final["integration_status"] == "APPLY_PENDING"
-    )
+    assert final["review_status"] == "PASSED" and final["integration_status"] == "APPLY_PENDING"
     assert final["effective"] is False
     with case.db.transaction() as conn:
         operations = conn.execute("SELECT * FROM c_m1_operations").fetchall()
@@ -60,13 +55,8 @@ def test_idempotent_submit_and_decide_replay_original_result(case):
     result = decide(case, application)
     assert decide(case, application) == result
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_applications").fetchone()["n"]
-            == 1
-        )
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_applications").fetchone()["n"] == 1
+        assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
 
 
 def test_concurrent_submit_is_one_application(case):
@@ -80,10 +70,7 @@ def test_concurrent_submit_is_one_application(case):
         results = list(pool.map(lambda _: attempt(), range(2)))
     assert results[0] == results[1]
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_applications").fetchone()["n"]
-            == 1
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_applications").fetchone()["n"] == 1
 
 
 def test_idempotent_replay_still_checks_current_resource_scope(case):
@@ -114,12 +101,11 @@ def test_concurrent_decisions_have_one_winner(case):
         results = list(pool.map(attempt, range(2)))
     assert results.count(2) == 1 and results.count("STALE_VERSION") == 1
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
         assert (
             conn.execute(
-                "SELECT count(*) AS n FROM c_audit_events WHERE action IN ('m2.approve','m2.reject')"
+                "SELECT count(*) AS n FROM c_audit_events "
+                "WHERE action IN ('m2.approve','m2.reject')"
             ).fetchone()["n"]
             == 1
         )
@@ -131,9 +117,7 @@ def test_cross_scope_read_is_hidden(case):
         token = login(client, "outsider")
         headers = {"Authorization": "Bearer " + token}
         assert (
-            client.get(
-                "/api/v1/m2/applications/" + application["id"], headers=headers
-            ).status_code
+            client.get("/api/v1/m2/applications/" + application["id"], headers=headers).status_code
             == 404
         )
         assert client.get("/api/v1/m2/applications", headers=headers).json() == []
@@ -181,17 +165,12 @@ def test_rejection_requires_reason_and_closes_review(case):
         decide(case, rejected, key="late")
     assert error.value.code == "INVALID_STATE"
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"]
-            == 0
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"] == 0
 
 
 @pytest.mark.parametrize("inclusive", [True, False])
 def test_deadline_equality_and_repeat_scan(case, inclusive):
-    case.approval.workflow_for = lambda *_: replace(
-        case.workflow, deadline_inclusive=inclusive
-    )
+    case.approval.workflow_for = lambda *_: replace(case.workflow, deadline_inclusive=inclusive)
     application = submit(case)
     case.clock.now += timedelta(minutes=10)
     assert case.approval.expire_due() == (1 if inclusive else 0)
@@ -227,9 +206,7 @@ def test_approval_at_deadline_cannot_win_timeout(case):
         assert one.result() in ("REVIEW_EXPIRED", "STALE_VERSION")
         assert two.result() == 1
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 0
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 0
 
 
 def test_flow_configuration_does_not_change_inflight_snapshot(case):
@@ -244,10 +221,7 @@ def test_flow_configuration_does_not_change_inflight_snapshot(case):
     )
     intermediate = decide(case, application)
     assert intermediate["step_index"] == 1
-    assert (
-        decide(case, intermediate, reviewer="second", key="second")["review_status"]
-        == "PASSED"
-    )
+    assert decide(case, intermediate, reviewer="second", key="second")["review_status"] == "PASSED"
 
 
 def test_audit_failure_rolls_back_decision_and_operation(case, monkeypatch):
@@ -265,13 +239,8 @@ def test_audit_failure_rolls_back_decision_and_operation(case, monkeypatch):
     row = case.approval.get(case.principals["student"], application["id"])
     assert row["review_status"] == "REVIEWING" and row["version"] == 2
     with case.db.transaction() as conn:
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
-        )
-        assert (
-            conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"]
-            == 0
-        )
+        assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 1
+        assert conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"] == 0
 
 
 @pytest.mark.parametrize("room,status", [("R0", 409), ("R2", 403), ("missing", 404)])
@@ -350,3 +319,27 @@ def test_string_flags_cannot_silently_enable_workflow_privileges(flag):
     )
     with pytest.raises(TypeError, match="booleans"):
         replace(workflow, **{flag: "false"})
+
+
+def test_action_query_uses_current_node_scope_and_permissions(case):
+    application = submit(case)
+    with TestClient(case.app) as client:
+        token = login(client, "first")
+        headers = {"Authorization": "Bearer " + token}
+        path = f"/api/v1/m2/applications/{application['id']}/actions"
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["allowed_actions"] == ["APPROVE", "REJECT", "REVOKE"]
+        with case.db.transaction() as conn:
+            conn.execute(
+                "UPDATE c_roles SET permissions=%s WHERE name='first'",
+                (["m2.review", "m2.read_all", "m2.revoke"],),
+            )
+        assert client.get(path, headers=headers).json()["allowed_actions"] == ["REVOKE"]
+        owner = login(client, "student")
+        assert (
+            client.get(path, headers={"Authorization": "Bearer " + owner}).json()["allowed_actions"]
+            == []
+        )
+        outsider = login(client, "outsider")
+        assert client.get(path, headers={"Authorization": "Bearer " + outsider}).status_code == 404
