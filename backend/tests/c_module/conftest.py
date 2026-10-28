@@ -1,5 +1,4 @@
 import os
-import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -7,8 +6,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 
 from app.common.audit.service import AuditService
 from app.common.auth.database import Database
@@ -18,8 +17,6 @@ from app.modules.m2_approval.api import create_app
 from app.modules.m2_approval.domain import Room, Step, Workflow
 from app.modules.m2_approval.migrate import migrate
 from app.modules.m2_approval.service import ApprovalService
-from psycopg import sql
-from psycopg.conninfo import make_conninfo
 
 
 @pytest.fixture(scope="session")
@@ -27,6 +24,19 @@ def postgres_url():
     supplied = os.environ.get("C_TEST_DATABASE_URL")
     if supplied:
         yield supplied
+        return
+    if os.environ.get("CAMPUS_TEST_POSTGRES") == "1":
+        from app.config import Settings
+
+        settings = Settings(_env_file=None)
+        assert settings.database_configured, "Integration tests require a real PostgreSQL service"
+        yield make_conninfo(
+            host=settings.db_host,
+            port=settings.db_port,
+            dbname=settings.db_name,
+            user=settings.db_user,
+            password=settings.db_password.get_secret_value(),
+        )
         return
     pgserver = pytest.importorskip(
         "pgserver",
@@ -43,20 +53,31 @@ def postgres_url():
 
 
 @pytest.fixture
-def database(postgres_url):
+def empty_database(postgres_url):
     schema = "c_test_" + uuid4().hex
     base = Database(postgres_url)
     with base.transaction() as conn:
         conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
     db = Database(make_conninfo(postgres_url, options=f"-csearch_path={schema}"))
-    migrate(db)
     try:
         yield db
     finally:
         with base.transaction() as conn:
-            conn.execute(
-                sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema))
-            )
+            conn.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
+@pytest.fixture
+def database(empty_database):
+    migrate(empty_database)
+    return empty_database
+
+
+def pytest_collection_modifyitems(items):
+    """Use the existing CI PostgreSQL lane for tests with real database fixtures."""
+    for item in items:
+        if item.path.resolve().is_relative_to(Path(__file__).resolve().parent):
+            if "postgres_url" in item.fixturenames:
+                item.add_marker(pytest.mark.integration)
 
 
 class Clock:
@@ -85,9 +106,7 @@ def case(database):
     )
     roles = {
         "applicant": frozenset({"m2.submit"}),
-        "first": frozenset(
-            {"m2.review", "review.first", "m2.read_all", "m2.revoke", "audit.read"}
-        ),
+        "first": frozenset({"m2.review", "review.first", "m2.read_all", "m2.revoke", "audit.read"}),
         "second": frozenset({"m2.review", "review.second", "m2.read_all"}),
     }
     ids, principals = {}, {}
@@ -149,6 +168,4 @@ def submit(case, key="submit-1", **updates):
         "purpose": "合成数据测试",
     }
     payload.update(updates)
-    return case.approval.submit(
-        case.principals["student"], **payload, key=key, request_id=key
-    )
+    return case.approval.submit(case.principals["student"], **payload, key=key, request_id=key)
