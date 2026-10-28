@@ -59,11 +59,38 @@ Content-Type: application/json
 主要响应字段包括 id、applicant_id、room_id、starts_at、ends_at、purpose、review_status、integration_status、step_index、step_count、deadline、version、revoked、effective、created_at、updated_at。
 step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是审批节点截止时间，当前只对待审批状态执行超时关闭。
 
+成功提交的合成 201 响应如下；本人列表为此类对象的数组，详情返回同一视图。示例 UUID 和时间只用于说明结构：
+
+```json
+{
+  "id": "00000000-0000-4000-8000-000000000010",
+  "applicant_id": "00000000-0000-4000-8000-000000000001",
+  "room_id": "room-demo-01",
+  "starts_at": "2030-01-02T01:00:00Z",
+  "ends_at": "2030-01-02T03:00:00Z",
+  "purpose": "合成课程活动申请",
+  "review_status": "REVIEWING",
+  "integration_status": "NONE",
+  "step_index": 0,
+  "step_count": 2,
+  "deadline": "2030-01-01T01:10:00Z",
+  "version": 1,
+  "revoked": false,
+  "effective": false,
+  "created_at": "2030-01-01T01:00:00Z",
+  "updated_at": "2030-01-01T01:00:00Z"
+}
+```
+
+对这个响应，actions 可能为 `[]`（申请人无审批/撤销权）；对具备当前节点权限和范围的审批人可能为 `["APPROVE","REJECT","REVOKE"]`，以实际查询为准。
+
 ## 3. C-03：身份、许可与数据范围
 
 登录请求为 username/password JSON；密码只经请求体提交。后续请求使用 `Authorization: Bearer <access_token>`。
 服务端使用可撤销会话，读取当前账号启用状态、角色和范围；退出/过期后返回 401，账号停用撤销已有会话。当前无刷新令牌。
 前端建议在内存保存会话，收到 401 后重新登录；服务间凭据只存在后端环境中。
+
+合成登录请求 `{"username":"synthetic-student","password":"<operator-provided-synthetic-password>"}`；200 响应结构为 `{"access_token":"<opaque-session-token>","token_type":"bearer","expires_at":"2030-01-01T01:10:00Z"}`。占位值不可直接用于实际登录；账号由受信初始化命令创建。
 
 合成当前身份响应：
 
@@ -162,3 +189,4 @@ step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是�
 前端通过 `/api/v1` 同源代理访问。实际资源查询需要 B 的实现；真实占用、释放及乱序终态保护需要 A 的实现；通知投递需要 E 的契约。
 C 的角色和流程名称由显式配置给出；没有为真实成员或学生自动授权。前端原型数据与真实 API 接入须明确切换。
 当前公开 OpenAPI、代码与本地/CI 结果仅证明 C 的实现和契约测试，真实 A/B/E 联调结果单独记录。
+截至 2026-10-28，对方实现已出现于 A 的整合 Draft PR #18 和 B 的 Draft PR #20；它们尚不等于主线可调用服务。A 的来源限制协议与 C 的 operation_id/generation 协议有差异，B 的校园级 nullable department_id 及普通用户可见范围仍待共同对齐，不能只改 URL 就宣称接通。

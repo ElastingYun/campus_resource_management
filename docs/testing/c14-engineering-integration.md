@@ -17,6 +17,7 @@
 | 编译 / 依赖 | `python -m compileall -q backend/app backend/alembic`；`python -m pip --no-cache-dir check` | 均退出 0；No broken requirements found |
 | 前端 | Node 22.23.4，锁文件原样；`npm ci`、`npm run build` | 安装成功，0 vulnerabilities；vue-tsc 和 Vite 8.3.5 构建通过 |
 | Shell / diff | `bash -n infra/scripts/ci-smoke.sh`；`git diff --check` | 均退出 0 |
+| 文档 / 冻结契约 | 临时文档检查脚本 | 8 份文档、34 个本地链接/锚点、14 项需求、20 项场景、原 SQL 与 OpenAPI 检查通过 |
 | 本地 Compose | 本机无 Docker | **NOT RUN**；由远端 GitHub CI 验证，不能用语法检查替代 |
 | 真实 A/B/E 联调 | 对方正式挂载与跨模块契约未验收 | **NOT RUN**；契约模拟不算真实服务写回 |
 
@@ -59,7 +60,8 @@ ruff format --check .
 
 ## 5. 远端 CI 与剩余验收
 
-PR 创建后记录 GitHub 的实际运行链接及结果。当前本地结果不能代替 Linux / PostgreSQL 17、镜像构建、Nginx 同源代理与断库恢复证据。
+固定提交 2ff74573f05bae6fd67c2d285fef265af9a360e8 的 [GitHub run 40679996646](https://github.com/ElastingYun/campus_resource_management/actions/runs/40679996646) 已完成且三项均 success：Frontend typecheck and build、Backend checks and PostgreSQL、Compose build and recovery。此为 PR #22 分支的 push 运行，后续提交以各自 Checks 为准。
+远端实际执行 Linux / Python 3.13 / PostgreSQL 17 的检查、迁移及测试，以及镜像构建、Nginx 同源代理与断库恢复；本地的 Compose NOT RUN 记录保留。
 Compose smoke 显式开启合成 C 配置，运行统一迁移及账号引导，分别经后端和前端代理检查登录、身份、授权列表，再执行数据库中断/恢复。它不调用真实 B/M1，不证明全链路预约生效。
 
 仍须相关 owner Review 共享入口、依赖、迁移和代理；A/B/C/D/E 确认身份、资源可见范围、占用冲突、通知、远程审计及生产策略后再组织真实网络联调。main 合并与最终验收由人类成员完成。
