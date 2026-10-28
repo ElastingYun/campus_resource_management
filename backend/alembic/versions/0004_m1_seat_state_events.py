@@ -1,7 +1,7 @@
 """M1 seat state event trail recording the source of every availability change.
 
-Revision ID: 0003_m1_seat_state_events
-Revises: 0002_m1_reservations
+Revision ID: 0004_m1_seat_state_events
+Revises: 0003_m1_reservations
 Create Date: 2026-10-27
 """
 
@@ -10,8 +10,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0003_m1_seat_state_events"
-down_revision = "0002_m1_reservations"
+revision = "0004_m1_seat_state_events"
+down_revision = "0003_m1_reservations"
 branch_labels = None
 depends_on = None
 

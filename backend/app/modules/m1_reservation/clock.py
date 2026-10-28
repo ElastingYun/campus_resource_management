@@ -17,4 +17,4 @@ class SystemClock:
 
 
 def get_clock(request: Request) -> Clock:
-    return request.app.state.clock
+    return request.app.state.m1_clock

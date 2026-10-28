@@ -1,7 +1,7 @@
 """M1 reservations with a no-double-booking exclusion constraint, and M1 settings.
 
-Revision ID: 0002_m1_reservations
-Revises: 0001_resources_placeholder
+Revision ID: 0003_m1_reservations
+Revises: 0002_resources_placeholder
 Create Date: 2026-10-27
 """
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0002_m1_reservations"
-down_revision = "0001_resources_placeholder"
+revision = "0003_m1_reservations"
+down_revision = "0002_resources_placeholder"
 branch_labels = None
 depends_on = None
 

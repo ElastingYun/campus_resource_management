@@ -109,9 +109,7 @@ def test_requires_identity_and_permission(client, clock, seeded):
 
 
 def test_auth_disabled_mode_rejects_even_with_headers(app, client, clock, seeded):
-    app.state.config = app.state.config.__class__(
-        database_url=app.state.config.database_url, auth_mode="disabled"
-    )
+    app.state.m1_config = app.state.m1_config.model_copy(update={"auth_mode": "disabled"})
     assert _query(client, local(2, 10)).status_code == 401
 
 

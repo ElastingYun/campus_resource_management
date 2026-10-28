@@ -1,7 +1,7 @@
 """M1 seat restrictions written back by M2 (approvals) and M3 (repairs).
 
-Revision ID: 0005_m1_seat_restrictions
-Revises: 0004_m1_violations_and_outbox
+Revision ID: 0006_m1_seat_restrictions
+Revises: 0005_m1_violations_and_outbox
 Create Date: 2026-10-27
 """
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0005_m1_seat_restrictions"
-down_revision = "0004_m1_violations_and_outbox"
+revision = "0006_m1_seat_restrictions"
+down_revision = "0005_m1_violations_and_outbox"
 branch_labels = None
 depends_on = None
 

@@ -34,7 +34,7 @@ class CurrentUser:
 
 
 def get_current_user(request: Request) -> CurrentUser:
-    if request.app.state.config.auth_mode != "dev-headers":
+    if request.app.state.m1_config.auth_mode != "dev-headers":
         raise M1Error(401, "unauthenticated", "认证服务尚未接入，当前不接受任何身份")
     user_id = request.headers.get("X-Dev-User-Id", "")
     if not _USER_ID.fullmatch(user_id):

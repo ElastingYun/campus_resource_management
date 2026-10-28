@@ -179,9 +179,27 @@ def test_check_in_racing_the_no_show_job_never_ends_in_both(engine, seeded):
         }
 
 
-def test_cli_runs_one_pass(database_url, seeded):
+def test_cli_processes_due_reservations_in_the_configured_database(db_settings, engine, seeded):
+    """The CLI uses the real clock and D's CAMPUS_DB_* settings, like the deployed job."""
+    with engine.begin() as conn:
+        rid = conn.execute(
+            text(
+                "INSERT INTO m1_reservations (user_id, seat_id, room_id, start_at, end_at, status) "
+                "VALUES ('stu-cli', :seat, :room, now() - interval '20 minutes', "
+                "now() + interval '40 minutes', 'booked') RETURNING id"
+            ),
+            {"seat": seeded["seats"]["LIB-101-01"], "room": seeded["rooms"]["LIB-101"]},
+        ).scalar_one()
     backend = Path(__file__).resolve().parents[2]
-    env = {**os.environ, "DATABASE_URL": database_url, "PYTHONPATH": str(backend)}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(backend),
+        "CAMPUS_DB_HOST": db_settings.db_host,
+        "CAMPUS_DB_PORT": str(db_settings.db_port),
+        "CAMPUS_DB_NAME": db_settings.db_name,
+        "CAMPUS_DB_USER": db_settings.db_user,
+        "CAMPUS_DB_PASSWORD": db_settings.db_password.get_secret_value(),
+    }
     result = subprocess.run(
         [sys.executable, "-m", "app.modules.m1_reservation.jobs"],
         cwd=backend,
@@ -191,4 +209,9 @@ def test_cli_runs_one_pass(database_url, seeded):
         timeout=60,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.startswith("m1 jobs: JobReport(")
+    assert "no_shows=1" in result.stdout
+    with engine.connect() as conn:
+        status = conn.execute(
+            text("SELECT status FROM m1_reservations WHERE id = :i"), {"i": rid}
+        ).scalar_one()
+    assert status == "no_show"

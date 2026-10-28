@@ -1,7 +1,7 @@
 """M1 no-show violations and the notification outbox.
 
-Revision ID: 0004_m1_violations_and_outbox
-Revises: 0003_m1_seat_state_events
+Revision ID: 0005_m1_violations_and_outbox
+Revises: 0004_m1_seat_state_events
 Create Date: 2026-10-27
 """
 
@@ -10,8 +10,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0004_m1_violations_and_outbox"
-down_revision = "0003_m1_seat_state_events"
+revision = "0005_m1_violations_and_outbox"
+down_revision = "0004_m1_seat_state_events"
 branch_labels = None
 depends_on = None
 

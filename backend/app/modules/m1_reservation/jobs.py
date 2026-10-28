@@ -16,10 +16,10 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import load_config
-from app.db import make_engine, make_sessionmaker
+from app.config import Settings
+from app.database import build_engine
 from app.modules.m1_reservation import events, repository
 from app.modules.m1_reservation.models import NotificationOutbox, Reservation, Violation
 from app.modules.m1_reservation.settings import M1Settings, load_settings
@@ -173,8 +173,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    engine = make_engine(load_config().database_url)
-    factory = make_sessionmaker(engine)
+    engine = build_engine(Settings())
+    factory = sessionmaker(engine, expire_on_commit=False)
     while True:
         with factory() as session:
             report = run_due(session, datetime.now(UTC))

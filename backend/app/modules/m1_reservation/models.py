@@ -17,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db import Base
+from app.database import Base
 
 ACTIVE_STATUSES = ("booked", "checked_in")
 SOURCE_TYPES = ("m1_reservation", "m2_approval", "m3_repair")

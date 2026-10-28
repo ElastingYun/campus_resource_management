@@ -61,14 +61,14 @@ def auth(user_id: str = "stu-001", department: str | None = None, perms=(PERM_RE
 @pytest.fixture
 def clock(app):
     fixed = FixedClock(DEFAULT_NOW)
-    app.state.clock = fixed
+    app.state.m1_clock = fixed
     return fixed
 
 
 @pytest.fixture
-def seeded(app, database_url, engine):
+def seeded(app, engine):
     """Apply the dev seed; return {"rooms": {code: id}, "seats": {code: id}}."""
-    apply_seeds(database_url)
+    apply_seeds(engine)
     with engine.connect() as conn:
         rooms = dict(conn.execute(text("SELECT code, id FROM rooms")).all())
         seats = dict(conn.execute(text("SELECT code, id FROM seats")).all())

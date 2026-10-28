@@ -1,7 +1,7 @@
 """Provisional rooms and seats master data (owner: B, written by A for M1).
 
-Revision ID: 0001_resources_placeholder
-Revises:
+Revision ID: 0002_resources_placeholder
+Revises: 0001_bootstrap
 Create Date: 2026-10-27
 """
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0001_resources_placeholder"
-down_revision = None
+revision = "0002_resources_placeholder"
+down_revision = "0001_bootstrap"
 branch_labels = None
 depends_on = None
 

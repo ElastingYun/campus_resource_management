@@ -122,9 +122,7 @@ def test_repeat_and_cancelled_check_ins_are_refused(client, clock, seeded):
 
 def test_missing_secret_disables_check_in(app, client, clock, seeded):
     rid = _booked(client, seeded)
-    app.state.config = app.state.config.__class__(
-        database_url=app.state.config.database_url, auth_mode="dev-headers", checkin_code_secret=""
-    )
+    app.state.m1_config = app.state.m1_config.model_copy(update={"checkin_code_secret": None})
     clock.set(local(2, 10))
     resp = _check_in(client, rid, "123456")
     assert resp.status_code == 503 and resp.json()["error"]["code"] == "checkin_not_configured"

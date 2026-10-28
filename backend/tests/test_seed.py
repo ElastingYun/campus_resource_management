@@ -11,16 +11,16 @@ def _counts(engine):
     return rooms, seats, ids
 
 
-def test_dev_seed_is_idempotent(database_url, engine, clean_db):
-    apply_seeds(database_url)
+def test_dev_seed_is_idempotent(engine, clean_db):
+    apply_seeds(engine)
     first = _counts(engine)
-    apply_seeds(database_url)
+    apply_seeds(engine)
     assert _counts(engine) == first
     assert first[:2] == (3, 36)
 
 
-def test_dev_seed_marks_outlet_seats(database_url, engine, clean_db):
-    apply_seeds(database_url)
+def test_dev_seed_marks_outlet_seats(engine, clean_db):
+    apply_seeds(engine)
     with engine.connect() as conn:
         rows = conn.execute(
             text("SELECT outlet_type, count(*) FROM seats GROUP BY outlet_type")

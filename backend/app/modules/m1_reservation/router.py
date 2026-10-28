@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.db import get_session
 from app.modules.m1_reservation import (
     availability,
     checkin,
@@ -17,7 +16,9 @@ from app.modules.m1_reservation import (
     restrictions,
 )
 from app.modules.m1_reservation import settings as m1_settings
-from app.modules.m1_reservation.clock import Clock, get_clock
+from app.modules.m1_reservation.clock import Clock, SystemClock, get_clock
+from app.modules.m1_reservation.config import M1Config
+from app.modules.m1_reservation.database import get_session
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
 from app.modules.m1_reservation.identity import (
     PERM_CHECKIN_CODE_VIEW,
@@ -54,7 +55,7 @@ router = APIRouter(prefix="/api/v1/m1", tags=["m1"])
 
 
 def business_tz(request: Request) -> ZoneInfo:
-    return ZoneInfo(request.app.state.config.business_timezone)
+    return ZoneInfo(request.app.state.m1_config.timezone)
 
 
 DbSession = Annotated[Session, Depends(get_session)]
@@ -218,7 +219,7 @@ def check_in(
         body.code,
         now=clock.now(),
         tz=tz,
-        secret=request.app.state.config.checkin_code_secret,
+        secret=request.app.state.m1_config.checkin_secret(),
     )
     return _reservation_out(session, reservation, tz)
 
@@ -234,7 +235,7 @@ def room_checkin_code(
 ) -> RoomCodeOut:
     """For the room's display terminal or room admins, not for students."""
     result = checkin.room_code(
-        session, request.app.state.config.checkin_code_secret, room_id, now=clock.now(), tz=tz
+        session, request.app.state.m1_config.checkin_secret(), room_id, now=clock.now(), tz=tz
     )
     return RoomCodeOut(
         room_id=result.room_id,
@@ -404,6 +405,9 @@ def seat_events(
     ]
 
 
-def register(app: FastAPI) -> None:
+def register(app: FastAPI, config: M1Config | None = None) -> None:
+    """Mount M1 on the shared app. Tests may replace app.state.m1_config / m1_clock."""
+    app.state.m1_config = config if config is not None else M1Config()
+    app.state.m1_clock = SystemClock()
     app.include_router(router)
     app.add_exception_handler(M1Error, m1_error_handler)
