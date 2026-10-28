@@ -1,0 +1,52 @@
+name: 缺陷报告
+description: 记录可复现的问题、影响和验证方式
+title: '[缺陷] '
+body:
+- type: textarea
+  id: problem
+  attributes:
+    label: 预期与实际行为
+    description: 使用合成或脱敏示例，不贴凭据或真实学生信息。
+    placeholder: '预期：
+
+      实际：
+
+      影响范围：'
+  validations:
+    required: true
+- type: textarea
+  id: reproduce
+  attributes:
+    label: 复现步骤
+    description: 提供最小步骤与必要前置条件。
+    placeholder: '1.
+
+      2.
+
+      3.'
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: 环境与版本
+    description: 填写提交号、运行方式和工具版本。
+    placeholder: '提交 / PR：
+
+      本机或 CI：
+
+      相关模块：'
+  validations:
+    required: true
+- type: textarea
+  id: evidence
+  attributes:
+    label: 证据与回归验证
+    description: 提供已脱敏的错误、截图/日志链接；明确实际运行结果。
+    placeholder: '日志或链接：
+
+      建议回归场景：
+
+      已运行 / 未运行：'
+  validations:
+    required: true
