@@ -2,6 +2,9 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import EngineeringHome from "./shared/EngineeringHome.vue";
 import M2Workspace from "./modules/m2-approval/M2Workspace.vue";
+import ResourceWorkspace from "./modules/m1-reservation/resources/ResourceWorkspace.vue";
+import { createPrototypeResourceGateway } from "./modules/m1-reservation/resources/prototype";
+import { createUnconfiguredResourceGateway } from "./modules/m1-reservation/resources/gateway";
 import {
   createPrototypeGateway,
   createUnconfiguredGateway,
@@ -12,6 +15,14 @@ const updateScreen = () => {
   screen.value = window.location.hash;
 };
 const isM2 = computed(() => ["#m2", "#m2-prototype"].includes(screen.value));
+const isResources = computed(() =>
+  ["#resources", "#resources-prototype"].includes(screen.value),
+);
+const resourceGateway = computed(() =>
+  screen.value === "#resources-prototype"
+    ? createPrototypeResourceGateway()
+    : createUnconfiguredResourceGateway(),
+);
 const gateway = computed(() =>
   screen.value === "#m2-prototype"
     ? createPrototypeGateway()
@@ -23,5 +34,10 @@ onUnmounted(() => window.removeEventListener("hashchange", updateScreen));
 
 <template>
   <M2Workspace v-if="isM2" :key="screen" :gateway="gateway" />
+  <ResourceWorkspace
+    v-else-if="isResources"
+    :key="screen"
+    :gateway="resourceGateway"
+  />
   <EngineeringHome v-else />
 </template>
