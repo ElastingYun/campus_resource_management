@@ -33,8 +33,13 @@ test.skipIf(!origin)(
         });
         if (dropFirstSubmission) {
           dropFirstSubmission = false;
-          expect(response.status).toBe(201);
-          await response.arrayBuffer();
+          const discarded = {
+            status: response.status,
+            id: undefined as unknown,
+          };
+          discardedResponses.push(discarded);
+          const value: unknown = await response.json();
+          discarded.id = isObject(value) ? value.id : undefined;
           throw new TypeError(
             "Synthetic client-side response loss after real C commit",
           );
