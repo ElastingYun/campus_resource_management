@@ -1,12 +1,18 @@
 """Shared fixtures: a throwaway PostgreSQL database migrated from empty.
 
-Database tests read the same CAMPUS_DB_* variables as the app (docs/development.md)
-and need a real PostgreSQL server: M1 relies on exclusion constraints and advisory
-locks. The configured user must be allowed to create databases. Each run creates
-crm_test_<random>, migrates it from empty and drops it afterwards; the configured
-database itself is never written to.
+Tests that need it are marked `integration` automatically and follow D's convention
+(docs/development.md): they run only with CAMPUS_TEST_POSTGRES=1 and the CAMPUS_DB_*
+variables of a real PostgreSQL server, and are skipped otherwise. M1 relies on
+exclusion constraints and advisory locks, so SQLite cannot stand in. The configured
+user must be allowed to create databases. Each run creates crm_test_<random>,
+migrates it from empty and drops it afterwards; the configured database itself is
+never written to.
+
+    CAMPUS_TEST_POSTGRES=1 python -m pytest -m integration   # database tests
+    python -m pytest -m 'not integration'                    # everything else
 """
 
+import os
 import uuid
 from pathlib import Path
 
@@ -36,15 +42,24 @@ def database_url(settings: Settings) -> URL:
     )
 
 
-def server_settings() -> Settings:
+def pytest_collection_modifyitems(items):
+    """Every test that needs the PostgreSQL server is an integration test (D's CI split)."""
+    for item in items:
+        if "postgres_server" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(scope="session")
+def postgres_server() -> Settings:
+    if os.environ.get("CAMPUS_TEST_POSTGRES") != "1":
+        pytest.skip("Set CAMPUS_TEST_POSTGRES=1 and CAMPUS_DB_* to run PostgreSQL tests")
     settings = Settings(_env_file=None)
     if not settings.database_configured:
-        pytest.fail("Database tests need CAMPUS_DB_HOST and CAMPUS_DB_PASSWORD (see conftest.py)")
+        pytest.fail("CAMPUS_TEST_POSTGRES=1 needs CAMPUS_DB_HOST and CAMPUS_DB_PASSWORD")
     return settings
 
 
-def create_database(prefix: str = "crm_test") -> Settings:
-    server = server_settings()
+def create_database(server: Settings, prefix: str = "crm_test") -> Settings:
     name = f"{prefix}_{uuid.uuid4().hex[:10]}"
     admin = create_engine(database_url(server), isolation_level="AUTOCOMMIT", poolclass=NullPool)
     with admin.connect() as conn:
@@ -53,10 +68,8 @@ def create_database(prefix: str = "crm_test") -> Settings:
     return server.model_copy(update={"db_name": name})
 
 
-def drop_database(settings: Settings) -> None:
-    admin = create_engine(
-        database_url(server_settings()), isolation_level="AUTOCOMMIT", poolclass=NullPool
-    )
+def drop_database(server: Settings, settings: Settings) -> None:
+    admin = create_engine(database_url(server), isolation_level="AUTOCOMMIT", poolclass=NullPool)
     with admin.connect() as conn:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{settings.db_name}" WITH (FORCE)'))
     admin.dispose()
@@ -75,11 +88,11 @@ def run_alembic(settings: Settings, action: str, revision: str) -> None:
 
 
 @pytest.fixture(scope="session")
-def db_settings():
-    settings = create_database()
+def db_settings(postgres_server):
+    settings = create_database(postgres_server)
     run_alembic(settings, "upgrade", "head")
     yield settings
-    drop_database(settings)
+    drop_database(postgres_server, settings)
 
 
 @pytest.fixture(scope="session")

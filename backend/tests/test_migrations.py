@@ -30,8 +30,8 @@ def test_orm_models_match_migrated_schema(engine):
     assert diff == []
 
 
-def test_schema_replays_from_empty_after_full_downgrade():
-    settings = create_database("crm_migr")
+def test_schema_replays_from_empty_after_full_downgrade(postgres_server):
+    settings = create_database(postgres_server, "crm_migr")
     eng = create_engine(database_url(settings), poolclass=NullPool)
     try:
         run_alembic(settings, "upgrade", "head")
@@ -41,4 +41,4 @@ def test_schema_replays_from_empty_after_full_downgrade():
         assert {"rooms", "seats", "m1_reservations"} <= set(inspect(eng).get_table_names())
     finally:
         eng.dispose()
-        drop_database(settings)
+        drop_database(postgres_server, settings)
