@@ -21,7 +21,7 @@
 
 ## 分阶段任务与完成判据
 
-下表除 D-01 外均是任务标识，尚未关联实际 GitHub Issue；创建任务后补充链接。D-01 收录提案不等于架构和业务政策已被批准。负责人已授权推进到 D-03，实施范围限于工程基础能力，未决的业务拓扑和接口不作为实现前提。
+D-01 关联 Issue #4 / PR #5；D-02 关联 [Issue #6](https://github.com/ElastingYun/campus_resource_management/issues/6) / [PR #8](https://github.com/ElastingYun/campus_resource_management/pull/8)；D-03 关联 [Issue #7](https://github.com/ElastingYun/campus_resource_management/issues/7) / [PR #9](https://github.com/ElastingYun/campus_resource_management/pull/9)。D-04～D-06 仍是计划标识，尚未建 Issue。D-01 收录提案不等于架构和业务政策已被批准。负责人已授权推进到 D-03，实施范围限于工程基础能力，未决的业务拓扑和接口不作为实现前提。
 
 | 任务 | 交付与依赖 | 完成判据 |
 | --- | --- | --- |

@@ -6,6 +6,8 @@
 
 目标是让六位成员共用可复现的开发底座，保留模块所有权，并支持最终真实的跨模块网络演示。核心栈沿用 Vue 3、Python/FastAPI、PostgreSQL。范围不包含业务审批政策、云资源或生产部署。
 
+实施进展分别见 [D-02 PR #8](https://github.com/ElastingYun/campus_resource_management/pull/8) 与 [D-03 PR #9](https://github.com/ElastingYun/campus_resource_management/pull/9)，具体检查与合并状态以对应 PR 为准。
+
 ## 当前基线与初始化边界
 
 仓库已有模块目录、README、AGENTS 和 B-01 草案，尚无运行应用和 CI。B 的[需求](../requirements/b01-m1-ui-and-resources.md)、[资源接口](b01-resource-api-draft.md)、[验收计划](../testing/b01-acceptance-plan.md)是待评审输入。A 的计划位于 [PR #3](https://github.com/ElastingYun/campus_resource_management/pull/3)，不能当成已批准契约。
