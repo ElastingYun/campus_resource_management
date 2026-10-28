@@ -60,7 +60,7 @@ def seats_with_rooms(
         query = query.where(Seat.outlet_type != "none")
     elif has_outlet is False:
         query = query.where(Seat.outlet_type == "none")
-    return list(session.execute(query.order_by(Room.code, Seat.code)).tuples())
+    return list(session.execute(query.order_by(Room.code, Seat.code)).all())
 
 
 def reserved_seat_ids(session: Session, seat_ids: Iterable[int], slot: Slot) -> set[int]:
@@ -106,7 +106,7 @@ def user_reservations(
         .limit(limit)
         .offset(offset)
     )
-    return list(session.execute(query).tuples())
+    return list(session.execute(query).all())
 
 
 def reservation_with_place(
@@ -118,7 +118,7 @@ def reservation_with_place(
         .join(Room, Reservation.room_id == Room.id)
         .where(Reservation.id == reservation_id)
     )
-    return session.execute(query).tuples().first()
+    return session.execute(query).first()
 
 
 def user_violations(session: Session, user_id: str) -> list[Violation]:
