@@ -47,7 +47,7 @@ python3 -m venv .venv
 .venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Windows 使用 .venv/Scripts 中对应命令。应用从根 .env 读取配置，环境变量优先。若本机 Python 的 CA 链未配置完整，使用操作系统的有效 CA bundle（例如 macOS 上 pip 的 --cert /etc/ssl/cert.pem）；不要关闭 TLS 验证。
+本次验证环境为 macOS 与 Linux；Windows 尚未纳入 CI，采用前需核对依赖及平台锁定。Windows 的虚拟环境命令位于 .venv/Scripts。应用从根 .env 读取配置，环境变量优先。若本机 Python 的 CA 链未配置完整，使用操作系统的有效 CA bundle（例如 macOS 上 pip 的 --cert /etc/ssl/cert.pem）；不要关闭 TLS 验证。
 
 数据库未配置时也可启动后端，/health/live 返回 200，/health/ready 返回 503。配置后数据库不可达，同样返回 503，不能用 SQLite 或固定成功响应替代。readiness 只检查数据库连接，不检查所有业务表或最终服务拓扑。
 
@@ -108,7 +108,7 @@ A/C/E 在自己的业务目录实现服务，B/C/E 分别维护主数据、认�
 
 ## 验证记录
 
-D-02 PR 列出本机实际执行的命令与结果。本机最初未安装 Docker/PostgreSQL，容器及真实数据库验收由 D-03 runner 提供，不能提前标为通过。未配置的业务、生产发布和回滚不属于初始化完成范围。
+D-02 PR 列出本机实际执行的命令与结果。本机未安装 Docker/PostgreSQL；D-03 的真实 runner 已完成容器、数据库和故障恢复验证，固定提交与 run 见验证记录。未配置的业务、生产发布和回滚不属于初始化完成范围。
 
 ## GitHub Actions 检查
 

@@ -24,7 +24,15 @@
 
 ## GitHub runner 实际结果
 
-工作流已准备，首次真实 run 待推送后记录。此时 PostgreSQL 连接、空库迁移与容器 smoke 的结果为 **NOT RUN**，不能提前标为通过。完成后补充 run 链接、提交和各 job 结果。
+首次实现提交 `8dbf527fb86377b83900edcf785aa17f8b782fc2` 对应 [PR CI run 40629917925](https://github.com/ElastingYun/campus_resource_management/actions/runs/40629917925)，三个 job 均为 success：
+
+| Job | 实际结果 |
+| --- | --- |
+| Frontend typecheck and build | 干净安装、类型检查和生产构建通过 |
+| Backend checks and PostgreSQL | Ruff、6 个基础测试、真实 PostgreSQL 空库迁移和重复升级、1 个数据库/迁移版本集成测试通过 |
+| Compose build and recovery | 镜像实际构建、迁移后启动、前端静态资源、后端/代理 readiness、数据库中断时 503 与存活分离、恢复后 readiness 均通过 |
+
+这些结果来自 Linux GitHub runner，不表示本机已安装或运行 Docker/PostgreSQL。后续提交的最新检查状态以 PR 为准；本记录保留首次实现的固定提交与 run，避免把不同版本的结果混用。
 
 ## 人工验收与边界
 
