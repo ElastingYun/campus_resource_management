@@ -61,7 +61,11 @@ ruff format --check .
 ## 5. 远端 CI 与剩余验收
 
 固定提交 2ff74573f05bae6fd67c2d285fef265af9a360e8 的 [GitHub run 40679996646](https://github.com/ElastingYun/campus_resource_management/actions/runs/40679996646) 已完成且三项均 success：Frontend typecheck and build、Backend checks and PostgreSQL、Compose build and recovery。此为 PR #22 分支的 push 运行，后续提交以各自 Checks 为准。
+后续固定提交 cb6db61fd79ffdb512d86c2b2e649e66138e6cb1 的 [run 40680618016](https://github.com/ElastingYun/campus_resource_management/actions/runs/40680618016) 也三项 success：32 单元测试、53 PostgreSQL integration（均保留 1 项弃用警告）、前端构建、Compose 资产/登录/身份/授权列表代理和数据库中断/恢复。
 远端实际执行 Linux / Python 3.13 / PostgreSQL 17 的检查、迁移及测试，以及镜像构建、Nginx 同源代理与断库恢复；本地的 Compose NOT RUN 记录保留。
 Compose smoke 显式开启合成 C 配置，运行统一迁移及账号引导，分别经后端和前端代理检查登录、身份、授权列表，再执行数据库中断/恢复。它不调用真实 B/M1，不证明全链路预约生效。
 
 仍须相关 owner Review 共享入口、依赖、迁移和代理；A/B/C/D/E 确认身份、资源可见范围、占用冲突、通知、远程审计及生产策略后再组织真实网络联调。main 合并与最终验收由人类成员完成。
+
+PR 为 [#22](https://github.com/ElastingYun/campus_resource_management/pull/22)。main 合入 D 的 #12 后，仅 docs/development.md 出现文字冲突；负责人于当前会话明确确认“采用 main 的实际合并记录并保留 C 容器验证说明”。已在 44f28a0 同步 main e5e95e3 并落实该策略，代码/迁移没有冲突。此确认只针对冲突处理，不替代非作者 Review。
+剩余交付分别在 [#23](https://github.com/ElastingYun/campus_resource_management/issues/23)（M1 协议/真实网络验收）、[#24](https://github.com/ElastingYun/campus_resource_management/issues/24)（资源可信身份/事务审计）、[#25](https://github.com/ElastingYun/campus_resource_management/issues/25)（通知投递）跟踪；C-01～C-06 已在 #10 回复。
