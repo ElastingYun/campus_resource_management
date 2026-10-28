@@ -1,0 +1,64 @@
+name: campus-resource-dev
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: infra/backend.Dockerfile
+  environment:
+    CAMPUS_DB_HOST: db
+    CAMPUS_DB_PORT: 5432
+    CAMPUS_DB_NAME: ${CAMPUS_DB_NAME:-campus}
+    CAMPUS_DB_USER: ${CAMPUS_DB_USER:-campus}
+    CAMPUS_DB_PASSWORD: ${CAMPUS_DB_PASSWORD:?Set CAMPUS_DB_PASSWORD in .env}
+
+services:
+  db:
+    image: postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+    environment:
+      POSTGRES_DB: ${CAMPUS_DB_NAME:-campus}
+      POSTGRES_USER: ${CAMPUS_DB_USER:-campus}
+      POSTGRES_PASSWORD: ${CAMPUS_DB_PASSWORD:?Set CAMPUS_DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+  backend:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      retries: 12
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  postgres-data:

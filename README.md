@@ -40,10 +40,10 @@
 | 前端 | **Vue 3** | 已确认 |
 | 后端 | **Python + FastAPI** | 已确认 |
 | 数据库 | **PostgreSQL** | 已确认 |
-| 前端工程化 | TypeScript + Vite | 推荐，待初始化确认 |
-| Python ORM / 数据迁移 | SQLAlchemy + Alembic | 推荐，待初始化确认 |
-| 自动化测试 | pytest；前端测试工具待定 | 推荐，待初始化确认 |
-| 容器化 | Docker + Docker Compose | 推荐，待初始化确认 |
+| 前端工程化 | TypeScript + Vite | D-02 已接入基础工程 |
+| Python ORM / 数据迁移 | SQLAlchemy + Alembic | D-02 已接入连接与基础版本历史 |
+| 自动化测试 | pytest；前端页面测试工具待定 | D-02 已提供工程行为测试 |
+| 容器化 | Docker + Docker Compose | D-02 提供开发配置，实际运行证据见 PR |
 | CI/CD | GitHub Actions | 推荐，待初始化确认 |
 | 运行环境 | 华为云 ECS（课程代金券） | 拟采用，资源规格及环境隔离方案待确认 |
 
@@ -66,7 +66,7 @@
 
 ## 4. 仓库组织（目录骨架）
 
-> **以下目录骨架已建立，空目录通过 `.gitkeep` 纳入 Git 版本管理。** 当前尚无可运行的前后端工程、数据库迁移或 CI 工作流；由 D 完成经确认的基础脚手架，之后各成员在对应位置开发。目录调整需提交 ADR 或经相关负责人评审。
+> **以下目录骨架已建立，空目录通过 `.gitkeep` 纳入 Git 版本管理。** D-02 已加入无业务路由的最小运行骨架，启动方式见下方运行与测试。业务功能和最终服务拓扑仍待实现/确认，CI 在 D-03 中接入。目录调整需提交 ADR 或经相关负责人评审。
 
 ```text
 campus_resource_management/
@@ -105,7 +105,7 @@ campus_resource_management/
 └── .gitignore
 ```
 
-目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/` 仅预留迁移目录，不代表已确认或安装 Alembic；`.github/workflows/` 目前只有占位文件，自动构建、测试和部署尚未启用。`.gitignore` 用于排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
+目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/` 已提供基础迁移和版本历史，不包含业务表；`.github/workflows/` 目前只有占位文件，自动构建、测试和部署尚未启用。`.gitignore` 用于排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
 
 共享目录和跨模块文件的修改必须通知对应负责人；涉及公共层、schema 或 API 契约的 PR，须安排受影响模块成员参与 Review。
 
@@ -145,9 +145,16 @@ git switch -c feat/m1-seat-search
 
 ### 运行与测试
 
-**当前尚未初始化可运行应用，不能声称已有可执行启动命令。** D 完成脚手架后，应将经实际运行验证的本地启动、测试、迁移及 Docker Compose 命令补充在这里，同时提供 `.env.example`（只含变量名和安全示例，不含真实密钥）。
+D-02 提供 Vue 3 基础首页、FastAPI 存活/就绪探针、PostgreSQL 连接、Alembic 版本历史和开发容器。M1/M2/M3 与登录业务均未接入；工程探针成功不表示业务已经完成。完整步骤、配置、验证命令与限制见 [本地开发与工程验收](docs/development.md)。
 
-基础工程的最小验收：前端页面可访问；FastAPI 健康检查可用；PostgreSQL 正常连接；至少一项**有真实断言的**自动化测试通过；其他成员可依据文档在新环境复现。
+安装 Docker 和 Compose v2 后，可在仓库根目录运行（先替换 .env 中的本地示例密码）：
+
+```sh
+cp .env.example .env
+docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
+```
+
+浏览器打开 http://127.0.0.1:8080。也可按开发说明用 Node 22、Python 3.13 在本机分别运行前后端。数据库未配置/不可达时 readiness 明确返回 503，存活探针仍可验证进程。本机与 CI 的实际验证证据以各 PR 为准，CI 在 D-03 中接入，生产发布与回滚尚未启用。
 
 ## 6. 第一次 Review：范围与完成判据
 
