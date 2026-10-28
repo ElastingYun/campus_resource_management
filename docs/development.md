@@ -91,7 +91,7 @@ npm run typecheck
 npm run build
 ```
 
-Vue 页面行为测试随 D-04 加入；类型检查和构建不能证明申请/审批流程正确。D-03 将提供真实 PostgreSQL 和容器 CI，分支保护仍需仓库管理员设置。
+Vue 页面行为测试随 D-04 加入；类型检查和构建不能证明申请/审批流程正确。D-03 的 Engineering CI 提供真实 PostgreSQL 和容器检查，分支保护仍需仓库管理员设置。
 
 ## 依赖更新与模块接入
 
@@ -109,3 +109,17 @@ A/C/E 在自己的业务目录实现服务，B/C/E 分别维护主数据、认�
 ## 验证记录
 
 D-02 PR 列出本机实际执行的命令与结果。本机最初未安装 Docker/PostgreSQL，容器及真实数据库验收由 D-03 runner 提供，不能提前标为通过。未配置的业务、生产发布和回滚不属于初始化完成范围。
+
+## GitHub Actions 检查
+
+[D-03 Issue #7](https://github.com/ElastingYun/campus_resource_management/issues/7) 对应 .github/workflows/ci.yml。push 和 pull_request 触发三个独立 job：
+
+- Frontend typecheck and build：npm ci、vue-tsc 和生产构建。
+- Backend checks and PostgreSQL：Ruff、6 个基础测试、真实 PostgreSQL 17 空库迁移/重复迁移、数据库与迁移 head 集成测试。
+- Compose build and recovery：实际构建镜像，等待迁移及服务就绪，检查静态资源/后端/代理；停止数据库验证 503 与存活分离，恢复后验证 readiness。
+
+infra/scripts/ci-smoke.sh 仅允许在带 GITHUB_RUN_ID 的隔离 CI 环境运行。它清理自己命名的临时项目及卷；开发者日常停止服务仍使用前文的普通 down，不删卷。
+
+工作流仅请求 contents: read，checkout 不保留推送凭据；没有生产 secrets、自动合并或部署。检查状态名称固定，管理员在 main 保护规则中要求这些检查和非作者审核后才构成强制门禁。
+
+D-03 PR 基于 D-02 分支，仅评审 CI 增量。先由人工评审并合并 D-02，再将 D-03 的目标分支改为 main 并重新检查后合并；不以依赖 PR 绕过审核。实测记录见 [D03 工程验证记录](testing/d03-quality-verification.md)。
