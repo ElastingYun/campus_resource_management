@@ -8,16 +8,24 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.modules.m1_reservation import availability, repository, reservations
+from app.modules.m1_reservation import availability, checkin, repository, reservations
 from app.modules.m1_reservation.clock import Clock, get_clock
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
-from app.modules.m1_reservation.identity import PERM_RESERVE, CurrentUser, get_current_user, require
+from app.modules.m1_reservation.identity import (
+    PERM_CHECKIN_CODE_VIEW,
+    PERM_RESERVE,
+    CurrentUser,
+    get_current_user,
+    require,
+)
 from app.modules.m1_reservation.models import Reservation
 from app.modules.m1_reservation.schemas import (
     AvailabilityOut,
+    CheckInRequest,
     ReservationCreate,
     ReservationList,
     ReservationOut,
+    RoomCodeOut,
     SeatAvailabilityOut,
     SettingsOut,
 )
@@ -163,6 +171,46 @@ def cancel_reservation(
 ) -> ReservationOut:
     reservation = reservations.cancel(session, user, reservation_id, now=clock.now())
     return _reservation_out(session, reservation, tz)
+
+
+@router.post("/reservations/{reservation_id}/check-in", response_model=ReservationOut)
+def check_in(
+    reservation_id: int,
+    body: CheckInRequest,
+    request: Request,
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> ReservationOut:
+    reservation = checkin.check_in(
+        session,
+        user,
+        reservation_id,
+        body.code,
+        now=clock.now(),
+        tz=tz,
+        secret=request.app.state.config.checkin_code_secret,
+    )
+    return _reservation_out(session, reservation, tz)
+
+
+@router.get("/rooms/{room_id}/checkin-code", response_model=RoomCodeOut)
+def room_checkin_code(
+    room_id: int,
+    request: Request,
+    _user: CurrentUser = Depends(require(PERM_CHECKIN_CODE_VIEW)),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> RoomCodeOut:
+    """For the room's display terminal or room admins, not for students."""
+    result = checkin.room_code(
+        session, request.app.state.config.checkin_code_secret, room_id, now=clock.now(), tz=tz
+    )
+    return RoomCodeOut(
+        room_id=result.room_id, date=result.day.isoformat(), code=result.code, valid_until=result.valid_until
+    )
 
 
 @router.get("/settings", response_model=SettingsOut)

@@ -62,3 +62,14 @@ class ReservationList(BaseModel):
     items: list[ReservationOut]
     limit: int = Field(ge=1)
     offset: int = Field(ge=0)
+
+
+class CheckInRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
+class RoomCodeOut(BaseModel):
+    room_id: int
+    date: str
+    code: str
+    valid_until: datetime
