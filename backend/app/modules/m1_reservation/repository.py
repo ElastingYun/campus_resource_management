@@ -2,12 +2,30 @@
 
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.common.resources.models import Room, Seat
 from app.modules.m1_reservation.models import ACTIVE_STATUSES, Reservation
 from app.modules.m1_reservation.timeslots import Slot
+
+# Advisory lock namespaces (first key of the two-int form).
+_LOCK_ROOM = 7101
+_LOCK_USER = 7102
+
+
+def lock_user(session: Session, user_id: str) -> None:
+    """Serialize one user's bookings so per-user rules hold under concurrency."""
+    session.execute(select(func.pg_advisory_xact_lock(_LOCK_USER, func.hashtext(user_id))))
+
+
+def lock_room_shared(session: Session, room_id: int) -> None:
+    """Bookings share the room lock; writers of room-wide restrictions take it exclusively."""
+    session.execute(select(func.pg_advisory_xact_lock_shared(_LOCK_ROOM, cast(room_id, Integer))))
+
+
+def lock_room_exclusive(session: Session, room_id: int) -> None:
+    session.execute(select(func.pg_advisory_xact_lock(_LOCK_ROOM, cast(room_id, Integer))))
 
 
 def seats_with_rooms(
@@ -43,3 +61,42 @@ def reserved_seat_ids(session: Session, seat_ids: Iterable[int], slot: Slot) -> 
         Reservation.end_at > slot.start_at,
     )
     return set(session.scalars(query))
+
+
+def user_has_overlap(session: Session, user_id: str, slot: Slot) -> bool:
+    query = select(Reservation.id).where(
+        Reservation.user_id == user_id,
+        Reservation.status.in_(ACTIVE_STATUSES),
+        Reservation.start_at < slot.end_at,
+        Reservation.end_at > slot.start_at,
+    )
+    return session.scalar(query.limit(1)) is not None
+
+
+def reservation_for_update(session: Session, reservation_id: int) -> Reservation | None:
+    return session.get(Reservation, reservation_id, with_for_update=True)
+
+
+def user_reservations(
+    session: Session, user_id: str, *, status: str | None, limit: int, offset: int
+) -> list[tuple[Reservation, Seat, Room]]:
+    query = (
+        select(Reservation, Seat, Room)
+        .join(Seat, Reservation.seat_id == Seat.id)
+        .join(Room, Reservation.room_id == Room.id)
+        .where(Reservation.user_id == user_id)
+    )
+    if status is not None:
+        query = query.where(Reservation.status == status)
+    query = query.order_by(Reservation.start_at.desc(), Reservation.id.desc()).limit(limit).offset(offset)
+    return list(session.execute(query).tuples())
+
+
+def reservation_with_place(session: Session, reservation_id: int) -> tuple[Reservation, Seat, Room] | None:
+    query = (
+        select(Reservation, Seat, Room)
+        .join(Seat, Reservation.seat_id == Seat.id)
+        .join(Room, Reservation.room_id == Room.id)
+        .where(Reservation.id == reservation_id)
+    )
+    return session.execute(query).tuples().first()

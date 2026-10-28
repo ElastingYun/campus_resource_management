@@ -4,15 +4,23 @@ from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.modules.m1_reservation import availability, repository
+from app.modules.m1_reservation import availability, repository, reservations
 from app.modules.m1_reservation.clock import Clock, get_clock
 from app.modules.m1_reservation.errors import M1Error, m1_error_handler
 from app.modules.m1_reservation.identity import PERM_RESERVE, CurrentUser, get_current_user, require
-from app.modules.m1_reservation.schemas import AvailabilityOut, SeatAvailabilityOut, SettingsOut
+from app.modules.m1_reservation.models import Reservation
+from app.modules.m1_reservation.schemas import (
+    AvailabilityOut,
+    ReservationCreate,
+    ReservationList,
+    ReservationOut,
+    SeatAvailabilityOut,
+    SettingsOut,
+)
 from app.modules.m1_reservation.settings import as_dict, load_settings
 from app.modules.m1_reservation.timeslots import check_booking_window, make_slot
 
@@ -63,6 +71,98 @@ def seat_availability(
             for r in results
         ],
     )
+
+
+def _reservation_out(session: Session, reservation: Reservation, tz: ZoneInfo) -> ReservationOut:
+    found = repository.reservation_with_place(session, reservation.id)
+    assert found is not None
+    return _to_out(*found, tz)
+
+
+def _to_out(reservation, seat, room, tz: ZoneInfo) -> ReservationOut:
+    def local(value):
+        return value.astimezone(tz) if value is not None else None
+
+    return ReservationOut(
+        id=reservation.id,
+        seat_id=seat.id,
+        seat_code=seat.code,
+        room_id=room.id,
+        room_code=room.code,
+        room_name=room.name,
+        start_at=local(reservation.start_at),
+        end_at=local(reservation.end_at),
+        status=reservation.status,
+        checked_in_at=local(reservation.checked_in_at),
+        cancelled_at=local(reservation.cancelled_at),
+        cancel_reason=reservation.cancel_reason,
+        created_at=local(reservation.created_at),
+    )
+
+
+@router.post("/reservations", response_model=ReservationOut, status_code=201)
+def create_reservation(
+    body: ReservationCreate,
+    response: Response,
+    idempotency_key: str | None = Header(
+        default=None, alias="Idempotency-Key", min_length=1, max_length=128
+    ),
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> ReservationOut:
+    reservation, created = reservations.create(
+        session,
+        user,
+        seat_id=body.seat_id,
+        start_at=body.start_at,
+        hours=body.hours,
+        idempotency_key=idempotency_key,
+        now=clock.now(),
+        tz=tz,
+    )
+    if not created:
+        response.status_code = 200
+    return _reservation_out(session, reservation, tz)
+
+
+@router.get("/reservations/me", response_model=ReservationList)
+def my_reservations(
+    status: Literal["booked", "checked_in", "cancelled", "no_show"] | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> ReservationList:
+    rows = repository.user_reservations(session, user.id, status=status, limit=limit, offset=offset)
+    return ReservationList(items=[_to_out(*row, tz) for row in rows], limit=limit, offset=offset)
+
+
+@router.get("/reservations/{reservation_id}", response_model=ReservationOut)
+def get_reservation(
+    reservation_id: int,
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    tz: ZoneInfo = Depends(business_tz),
+) -> ReservationOut:
+    found = repository.reservation_with_place(session, reservation_id)
+    if found is None or found[0].user_id != user.id:
+        raise M1Error(404, "reservation_not_found", "预约不存在")
+    return _to_out(*found, tz)
+
+
+@router.post("/reservations/{reservation_id}/cancel", response_model=ReservationOut)
+def cancel_reservation(
+    reservation_id: int,
+    user: CurrentUser = Depends(require(PERM_RESERVE)),
+    session: Session = Depends(get_session),
+    clock: Clock = Depends(get_clock),
+    tz: ZoneInfo = Depends(business_tz),
+) -> ReservationOut:
+    reservation = reservations.cancel(session, user, reservation_id, now=clock.now())
+    return _reservation_out(session, reservation, tz)
 
 
 @router.get("/settings", response_model=SettingsOut)

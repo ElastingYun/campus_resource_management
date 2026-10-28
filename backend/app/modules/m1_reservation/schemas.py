@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SeatAvailabilityOut(BaseModel):
@@ -31,3 +31,34 @@ class SettingsOut(BaseModel):
     late_remind_minutes: int
     no_show_minutes: int
     checkin_open_before_minutes: int
+
+
+class ReservationCreate(BaseModel):
+    seat_id: int
+    # Naive values are business-local time; offsets are honoured.
+    start_at: datetime
+    hours: int
+
+
+class ReservationOut(BaseModel):
+    """What a student may see about their own reservation. Never includes check-in codes."""
+
+    id: int
+    seat_id: int
+    seat_code: str
+    room_id: int
+    room_code: str
+    room_name: str
+    start_at: datetime
+    end_at: datetime
+    status: str
+    checked_in_at: datetime | None
+    cancelled_at: datetime | None
+    cancel_reason: str | None
+    created_at: datetime
+
+
+class ReservationList(BaseModel):
+    items: list[ReservationOut]
+    limit: int = Field(ge=1)
+    offset: int = Field(ge=0)
