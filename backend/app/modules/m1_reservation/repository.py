@@ -14,6 +14,7 @@ from app.modules.m1_reservation.timeslots import Slot
 # Advisory lock namespaces (first key of the two-int form).
 _LOCK_ROOM = 7101
 _LOCK_USER = 7102
+_LOCK_SEAT = 7103
 
 
 def lock_user(session: Session, user_id: str) -> None:
@@ -28,6 +29,12 @@ def lock_room_shared(session: Session, room_id: int) -> None:
 
 def lock_room_exclusive(session: Session, room_id: int) -> None:
     session.execute(select(func.pg_advisory_xact_lock(_LOCK_ROOM, cast(room_id, Integer))))
+
+
+def lock_seat(session: Session, seat_id: int) -> None:
+    """Queue bookings of one seat. Without it, concurrent overlapping inserts can
+    deadlock inside the exclusion-constraint check (found by test_concurrency)."""
+    session.execute(select(func.pg_advisory_xact_lock(_LOCK_SEAT, cast(seat_id, Integer))))
 
 
 def seats_with_rooms(

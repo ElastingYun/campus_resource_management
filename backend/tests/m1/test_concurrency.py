@@ -88,3 +88,19 @@ def test_duplicate_submissions_with_one_key_create_one_reservation(engine, seede
     assert sorted(code for code, _ in results) == ["created"] + ["replayed"] * 4
     assert len({rid for _, rid in results}) == 1
     assert _active_count(engine) == 1
+
+
+def test_overlapping_races_never_deadlock(engine, seeded):
+    """Regression: concurrent overlapping inserts used to deadlock inside the
+    exclusion-constraint check (PostgreSQL "deadlock detected" -> HTTP 500)."""
+    seat = seeded["seats"]["LIB-101-01"]
+    for round_no in range(30):
+        day = 3 + round_no % 6
+        base = 8 + 2 * (round_no // 6)  # distinct day/hour window per round
+        attempts = [
+            (f"stu-{round_no}-{k}", seat, local(day, base + offset), hours, None)
+            for k, (offset, hours) in enumerate([(0, 2), (1, 1), (0, 1), (1, 2), (0, 3), (1, 1)])
+        ]
+        results = _race(engine, attempts)  # an unexpected DB error propagates and fails the test
+        assert [code for code, _ in results].count("created") >= 1
+    assert _overlapping_active_pairs(engine) == 0

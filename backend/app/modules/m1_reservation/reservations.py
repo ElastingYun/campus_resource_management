@@ -66,7 +66,9 @@ def create(
     if not found:
         raise M1Error(404, "seat_not_found", "座位不存在")
     seat, room = found[0]
+    # Lock order (user -> room shared -> seat) is the same everywhere: no cycles.
     repository.lock_room_shared(session, room.id)
+    repository.lock_seat(session, seat.id)
 
     result = availability.evaluate(session, [(seat, room)], slot, user, tz)[0]
     if not result.available:
