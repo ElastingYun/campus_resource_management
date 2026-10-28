@@ -23,9 +23,7 @@ class Step:
 
     def __post_init__(self):
         if not self.permission or self.timeout.total_seconds() <= 0:
-            raise ValueError(
-                "Each review step needs a permission and a positive deadline"
-            )
+            raise ValueError("Each review step needs a permission and a positive deadline")
 
 
 @dataclass(frozen=True)
@@ -39,9 +37,7 @@ class Workflow:
 
     def __post_init__(self):
         if not self.version or not self.steps:
-            raise ValueError(
-                "A versioned, nonempty workflow must be supplied by the host"
-            )
+            raise ValueError("A versioned, nonempty workflow must be supplied by the host")
         if not all(isinstance(step, Step) for step in self.steps):
             raise TypeError("Workflow steps must be validated Step objects")
         flags = (
@@ -51,9 +47,7 @@ class Workflow:
             self.allow_revocation,
         )
         if any(type(flag) is not bool for flag in flags):
-            raise TypeError(
-                "Workflow flags must be booleans, not truthy configuration strings"
-            )
+            raise TypeError("Workflow flags must be booleans, not truthy configuration strings")
 
 
 def clean_text(value: str, name: str, maximum: int, *, required: bool = True) -> str:

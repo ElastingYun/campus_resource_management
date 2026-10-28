@@ -6,11 +6,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID, uuid4
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
+
 from app.common.audit.service import AuditService
 from app.common.auth.database import Database
 from app.common.auth.domain import Principal, ServiceError, aware, utcnow
-from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError
 
 
 def digest(value: str) -> str:
@@ -52,9 +53,7 @@ class AuthService:
         self._dummy_hash = self.hasher.hash(secrets.token_urlsafe(32))
 
     def _principal(self, conn, user_id: UUID) -> Principal:
-        user = conn.execute(
-            "SELECT * FROM c_users WHERE id=%s AND enabled", (user_id,)
-        ).fetchone()
+        user = conn.execute("SELECT * FROM c_users WHERE id=%s AND enabled", (user_id,)).fetchone()
         if not user:
             raise ServiceError(401, "INVALID_SESSION", "身份已失效")
         roles = conn.execute(
@@ -80,9 +79,7 @@ class AuthService:
         result = None
         with self.database.transaction() as conn:
             for key in keys:
-                conn.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,)
-                )
+                conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,))
                 conn.execute(
                     """INSERT INTO c_login_buckets (key, started_at, attempts)
                        VALUES (%s,%s,0) ON CONFLICT (key) DO NOTHING""",
@@ -186,12 +183,7 @@ class AuthService:
         all_rooms: bool = False,
     ) -> UUID:
         """Trusted bootstrap API only. Never expose this method as a public route."""
-        if (
-            not username.strip()
-            or len(username) > 128
-            or not password
-            or len(password) > 1024
-        ):
+        if not username.strip() or len(username) > 128 or not password or len(password) > 1024:
             raise ValueError("Invalid bootstrap credentials")
         user_id = uuid4()
         password_hash = self.hasher.hash(password)
@@ -223,9 +215,7 @@ class AuthService:
                     (existing["id"],),
                 ).fetchall()
                 try:
-                    same_password = self.hasher.verify(
-                        existing["password_hash"], password
-                    )
+                    same_password = self.hasher.verify(existing["password_hash"], password)
                 except (VerificationError, InvalidHashError):
                     same_password = False
                 if (
@@ -236,9 +226,7 @@ class AuthService:
                     or existing["all_rooms"] != all_rooms
                     or {row["role_name"] for row in current_roles} != set(roles)
                 ):
-                    raise ValueError(
-                        "Existing bootstrap user has different configuration"
-                    )
+                    raise ValueError("Existing bootstrap user has different configuration")
                 return existing["id"]
             conn.execute(
                 """INSERT INTO c_users
@@ -279,9 +267,7 @@ class AuthService:
     ):
         principal.require("auth.manage")
         if self.access_policy is None:
-            raise ServiceError(
-                403, "ACCESS_MANAGEMENT_DISABLED", "尚未配置账号管理范围规则"
-            )
+            raise ServiceError(403, "ACCESS_MANAGEMENT_DISABLED", "尚未配置账号管理范围规则")
         with self.database.transaction() as conn:
             user = conn.execute(
                 "SELECT * FROM c_users WHERE id=%s FOR UPDATE", (user_id,)
@@ -293,13 +279,9 @@ class AuthService:
             ).fetchall()
             if {row["name"] for row in roles} != set(role_names):
                 raise ServiceError(422, "UNKNOWN_ROLE", "包含未定义的角色")
-            delegated = {
-                permission for row in roles for permission in row["permissions"]
-            }
+            delegated = {permission for row in roles for permission in row["permissions"]}
             if not delegated.issubset(principal.permissions):
-                raise ServiceError(
-                    403, "DELEGATION_FORBIDDEN", "不能授予自身不具备的权限"
-                )
+                raise ServiceError(403, "DELEGATION_FORBIDDEN", "不能授予自身不具备的权限")
             old_roles = [
                 row["role_name"]
                 for row in conn.execute(
@@ -326,15 +308,11 @@ class AuthService:
             }
             # Pure host policy must approve both the old target and requested scope.
             if self.access_policy(principal, target, after) is not True:
-                raise ServiceError(
-                    403, "ACCOUNT_OUT_OF_SCOPE", "账号或授权范围不在管理权限内"
-                )
+                raise ServiceError(403, "ACCOUNT_OUT_OF_SCOPE", "账号或授权范围不在管理权限内")
             if before != after:
                 conn.execute("DELETE FROM c_user_roles WHERE user_id=%s", (user_id,))
                 for name in after["role_names"]:
-                    conn.execute(
-                        "INSERT INTO c_user_roles VALUES (%s,%s)", (user_id, name)
-                    )
+                    conn.execute("INSERT INTO c_user_roles VALUES (%s,%s)", (user_id, name))
                 conn.execute(
                     "UPDATE c_users SET room_ids=%s,all_rooms=%s,enabled=%s WHERE id=%s",
                     (after["room_ids"], all_rooms, enabled, user_id),

@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from psycopg.types.json import Jsonb
+
 from app.common.auth.database import Database
 from app.common.auth.domain import Principal
-from psycopg.types.json import Jsonb
 
 
 class AuditService:
@@ -42,9 +43,7 @@ class AuditService:
             ),
         )
 
-    def failure(
-        self, *, actor: UUID | None, code: str, request_id: str, now: datetime
-    ) -> None:
+    def failure(self, *, actor: UUID | None, code: str, request_id: str, now: datetime) -> None:
         # This separate transaction runs after the business transaction rolled back.
         with self.database.transaction() as conn:
             self.record(

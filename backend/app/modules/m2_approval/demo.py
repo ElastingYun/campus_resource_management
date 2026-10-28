@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
 
 import psycopg
+
 from app.common.audit.service import AuditService
 from app.common.auth.database import Database
 from app.common.auth.domain import ServiceError
@@ -26,9 +27,7 @@ class DemoResources:
 
 def create_demo_app():
     if os.environ.get("C_DEMO_MODE") != "1":
-        raise RuntimeError(
-            "Set C_DEMO_MODE=1 explicitly to enable synthetic demo policies"
-        )
+        raise RuntimeError("Set C_DEMO_MODE=1 explicitly to enable synthetic demo policies")
     dsn, password = (
         os.environ.get("C_DEMO_DATABASE_URL"),
         os.environ.get("C_DEMO_PASSWORD", ""),
@@ -80,9 +79,7 @@ def create_demo_app():
         if starts_at < now:
             raise ServiceError(422, "START_IN_PAST", "请选择未来时段")
 
-    approval = ApprovalService(
-        database, audit, DemoResources(), lambda *_: workflow, validate
-    )
+    approval = ApprovalService(database, audit, DemoResources(), lambda *_: workflow, validate)
 
     @asynccontextmanager
     async def lifespan(app):

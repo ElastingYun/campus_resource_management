@@ -4,11 +4,13 @@ from datetime import timedelta
 from threading import Barrier
 
 import pytest
+
 from app.common.auth.domain import ServiceError
 from app.modules.m2_approval.clients import Outcome, RemoteUnavailable
 from app.modules.m2_approval.worker import OperationWorker, RetrySettings
-from conftest import submit
-from test_approval import decide
+
+from .conftest import submit
+from .test_approval import decide
 
 
 class M1:
@@ -68,9 +70,7 @@ def test_confirmed_apply_and_source_scoped_release(case):
         key="revoke",
         request_id="revoke",
     )
-    assert (
-        not revoked["effective"] and revoked["integration_status"] == "RELEASE_PENDING"
-    )
+    assert not revoked["effective"] and revoked["integration_status"] == "RELEASE_PENDING"
     assert runner.run_once()
     final = case.approval.get(case.principals["student"], application["id"])
     assert final["revoked"] and final["integration_status"] == "RELEASED"
@@ -136,14 +136,8 @@ def test_release_before_late_apply_does_not_revive_application(case):
     old_worker._claim = lambda: claim
     assert old_worker.run_once()
     final = case.approval.get(case.principals["student"], application["id"])
-    assert (
-        final["revoked"]
-        and not final["effective"]
-        and final["integration_status"] == "RELEASED"
-    )
-    assert (
-        application["id"] not in gateway.sources and "another-source" in gateway.sources
-    )
+    assert final["revoked"] and not final["effective"] and final["integration_status"] == "RELEASED"
+    assert application["id"] not in gateway.sources and "another-source" in gateway.sources
 
 
 def test_retry_limit_preserves_unknown_and_requires_attention(case):
@@ -165,9 +159,7 @@ def test_retry_limit_preserves_unknown_and_requires_attention(case):
         operation = conn.execute("SELECT * FROM c_m1_operations").fetchone()
         assert operation["state"] == "ATTENTION" and operation["attempts"] == 2
     assert (
-        case.approval.get(case.principals["student"], application["id"])[
-            "integration_status"
-        ]
+        case.approval.get(case.principals["student"], application["id"])["integration_status"]
         == "APPLY_UNKNOWN"
     )
 
@@ -180,17 +172,12 @@ def test_definite_apply_conflict_does_not_activate(case):
     application = passed(case)
     assert worker(case, Conflict()).run_once()
     final = case.approval.get(case.principals["student"], application["id"])
-    assert (
-        final["review_status"] == "PASSED"
-        and final["integration_status"] == "APPLY_CONFLICT"
-    )
+    assert final["review_status"] == "PASSED" and final["integration_status"] == "APPLY_CONFLICT"
     assert final["effective"] is False
 
 
 def test_revocation_disabled_by_snapshot_creates_no_release(case):
-    case.approval.workflow_for = lambda *_: replace(
-        case.workflow, allow_revocation=False
-    )
+    case.approval.workflow_for = lambda *_: replace(case.workflow, allow_revocation=False)
     application = passed(case)
     with pytest.raises(ServiceError) as error:
         case.approval.revoke(

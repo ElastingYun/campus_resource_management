@@ -1,13 +1,14 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 from urllib.parse import quote
 
 import httpx
+
 from app.common.auth.domain import ServiceError
 from app.modules.m2_approval.domain import Room
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     APPLIED = "APPLIED"
     RELEASED = "RELEASED"
     CONFLICT = "CONFLICT"
@@ -69,10 +70,7 @@ class HttpM1Gateway:
                 timeout=self.timeout,
                 follow_redirects=False,
             )
-            if (
-                response.status_code not in (200, 201, 202, 409)
-                or len(response.content) > 65536
-            ):
+            if response.status_code not in (200, 201, 202, 409) or len(response.content) > 65536:
                 raise RemoteUnavailable("M1_RESPONSE_UNCONFIRMED")
             body = response.json()
             if not isinstance(body, dict) or body.get("operation_id") != operation_id:
@@ -111,9 +109,7 @@ class HttpResourceGateway:
         timeout_seconds: float,
     ):
         if "{room_id}" not in room_path or not service_token or timeout_seconds <= 0:
-            raise ValueError(
-                "Explicit resource path, credentials and timeout are required"
-            )
+            raise ValueError("Explicit resource path, credentials and timeout are required")
         self.client, self.path, self._token, self.timeout = (
             client,
             room_path,
@@ -143,6 +139,4 @@ class HttpResourceGateway:
                 raise ValueError("Invalid resource response")
             return Room(room_id, body["department_id"], body["enabled"])
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            raise ServiceError(
-                503, "RESOURCE_UNAVAILABLE", "暂时无法确认教室信息"
-            ) from exc
+            raise ServiceError(503, "RESOURCE_UNAVAILABLE", "暂时无法确认教室信息") from exc

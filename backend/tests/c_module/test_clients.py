@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 import pytest
+
 from app.common.auth.domain import ServiceError
 from app.modules.m2_approval.clients import (
     HttpM1Gateway,
@@ -11,7 +12,8 @@ from app.modules.m2_approval.clients import (
     Outcome,
     RemoteUnavailable,
 )
-from test_worker import passed, worker
+
+from .test_worker import passed, worker
 
 
 @pytest.mark.parametrize(
@@ -26,9 +28,7 @@ from test_worker import passed, worker
 def test_invalid_remote_confirmation_is_unknown(response):
     with httpx.Client(
         base_url="http://contract.test",
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=response)
-        ),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=response)),
     ) as client:
         gateway = HttpM1Gateway(
             client,
@@ -105,9 +105,7 @@ def _serve_contract(pipe):
             operation_id = body["operation_id"]
             result = "APPLIED" if body["kind"] == "APPLY" else "RELEASED"
             results.setdefault(operation_id, result)
-            self.respond(
-                {"operation_id": operation_id, "result": results[operation_id]}
-            )
+            self.respond({"operation_id": operation_id, "result": results[operation_id]})
 
         def do_GET(self):
             operation_id = self.path.rsplit("/", 1)[-1]
@@ -134,9 +132,7 @@ def test_separate_process_http_apply_and_release(case):
     try:
         assert parent.poll(10), "Contract server failed to start"
         port = parent.recv()
-        with httpx.Client(
-            base_url=f"http://127.0.0.1:{port}", trust_env=False
-        ) as client:
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False) as client:
             gateway = HttpM1Gateway(
                 client,
                 apply_path="/apply",

@@ -21,10 +21,23 @@ anyio==4.15.1
     #   -c requirements.txt
     #   httpx
     #   starlette
+argon2-cffi==25.1.0
+    # via
+    #   -c requirements.txt
+    #   -r requirements.in
+argon2-cffi-bindings==26.1.0
+    # via
+    #   -c requirements.txt
+    #   argon2-cffi
 certifi==2026.10.23
     # via
+    #   -c requirements.txt
     #   httpcore
     #   httpx
+cffi==2.1.1
+    # via
+    #   -c requirements.txt
+    #   argon2-cffi-bindings
 click==8.5.0
     # via
     #   -c requirements.txt
@@ -39,9 +52,14 @@ h11==0.16.0
     #   httpcore
     #   uvicorn
 httpcore==1.0.9
-    # via httpx
+    # via
+    #   -c requirements.txt
+    #   httpx
 httpx==0.28.1
-    # via -r requirements-dev.in
+    # via
+    #   -c requirements.txt
+    #   -r requirements-dev.in
+    #   -r requirements.in
 idna==3.20
     # via
     #   -c requirements.txt
@@ -73,6 +91,10 @@ psycopg-binary==3.3.6
     # via
     #   -c requirements.txt
     #   psycopg
+pycparser==3.12
+    # via
+    #   -c requirements.txt
+    #   cffi
 pydantic==2.14.1
     # via
     #   -c requirements.txt

@@ -1,6 +1,7 @@
 import pytest
-from app.modules.m2_approval.demo import create_demo_app
 from fastapi.testclient import TestClient
+
+from app.modules.m2_approval.demo import create_demo_app
 
 
 def test_demo_requires_explicit_mode_and_credentials(monkeypatch):
@@ -32,8 +33,8 @@ def test_demo_factory_seeds_repeatably_and_serves_identity(database, monkeypatch
         )
         assert response.status_code == 200
         token = response.json()["access_token"]
-        assert client.get(
-            "/api/v1/auth/me", headers={"Authorization": "Bearer " + token}
-        ).json()["permissions"] == ["m2.submit"]
+        assert client.get("/api/v1/auth/me", headers={"Authorization": "Bearer " + token}).json()[
+            "permissions"
+        ] == ["m2.submit"]
     with database.transaction() as conn:
         assert conn.execute("SELECT count(*) AS n FROM c_users").fetchone()["n"] == 3

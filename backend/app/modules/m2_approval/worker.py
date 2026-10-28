@@ -21,9 +21,7 @@ class RetrySettings:
             or self.delay.total_seconds() <= 0
             or self.max_attempts < 1
         ):
-            raise ValueError(
-                "Positive lease, retry delay and attempt limit are required"
-            )
+            raise ValueError("Positive lease, retry delay and attempt limit are required")
 
 
 class OperationWorker:
