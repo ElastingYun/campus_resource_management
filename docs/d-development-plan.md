@@ -2,7 +2,7 @@
 
 负责人：D，GitHub 账号 `jiadongchen666`。日期：2026-10-28。
 
-关联任务：[D-01 Issue #4](https://github.com/ElastingYun/campus_resource_management/issues/4)。状态：开发计划与工程提案，待团队评审。
+关联任务：[D-01 Issue #4](https://github.com/ElastingYun/campus_resource_management/issues/4)。状态：D-01 提案已合入 main；D-02/D-03 工程基础已交付，业务契约与拓扑仍待相关 owner 确认。
 
 我负责 M2 整教室申请与审批前端、统一工程初始化、CI/CD、部署和回滚。我先交付其他成员可以复用的最小工程，再与 C 完成 M2 前后端联调。课程过程证据随真实开发产生：每个任务都关联 Issue、分支、PR、测试和人工 Review。
 
@@ -21,7 +21,7 @@
 
 ## 分阶段任务与完成判据
 
-D-01 关联 Issue #4 / PR #5；D-02 关联 [Issue #6](https://github.com/ElastingYun/campus_resource_management/issues/6) / [PR #8](https://github.com/ElastingYun/campus_resource_management/pull/8)；D-03 关联 [Issue #7](https://github.com/ElastingYun/campus_resource_management/issues/7) / [PR #9](https://github.com/ElastingYun/campus_resource_management/pull/9)。D-04～D-06 仍是计划标识，尚未建 Issue。D-01 收录提案不等于架构和业务政策已被批准。负责人已授权推进到 D-03，实施范围限于工程基础能力，未决的业务拓扑和接口不作为实现前提。
+D-01 关联 Issue #4 / PR #5；D-02 关联 [Issue #6](https://github.com/ElastingYun/campus_resource_management/issues/6) / [PR #8](https://github.com/ElastingYun/campus_resource_management/pull/8)；D-03 关联 [Issue #7](https://github.com/ElastingYun/campus_resource_management/issues/7) / [PR #9](https://github.com/ElastingYun/campus_resource_management/pull/9)。D-04 接口对齐已建立 [Issue #10](https://github.com/ElastingYun/campus_resource_management/issues/10)，页面实现与联调按后续子任务推进；D-05/D-06 尚未建实现 Issue。D-01 收录提案不等于架构和业务政策已被批准。负责人已授权继续推进交付收尾、协作模板、M2 原型与真实接入准备；未确认契约不能被当成已存在的接口。
 
 | 任务 | 交付与依赖 | 完成判据 |
 | --- | --- | --- |
@@ -76,3 +76,9 @@ AI 帮我分析、实现、测试、定位失败和整理文档；我负责确�
 请 A/B/C/E/F 分别检查工程提案中影响自己模块的部分，重点见[待决事项](architecture/d01-engineering-initialization-proposal.md#待决事项与评审责任)。D-04 的直接前置是 C 的 M2/身份契约与 B 的资源契约；占用写回和已有预约冲突还需 A/C 决策。
 
 D-01 本身只修改两份 Markdown 文档，无 API、schema 或权限变更，不需要数据库迁移。文档检查结果以 PR 记录为准；应用测试、构建、迁移、CI 和部署在本任务中为 **NOT RUN**，由后续实施任务提供实际证据。
+
+## 工程交付与后续状态
+
+D-01 PR #5 已合并。D-03 PR #9 先合入 D-02 分支，再随 PR #8 于 2026-10-28 合入 main；PR #8 获得 ElastingYun 的 APPROVED Review。主线固定提交 a038472 的 [CI run 40652887035](https://github.com/ElastingYun/campus_resource_management/actions/runs/40652887035) 成功，包含前端、真实 PostgreSQL 和容器故障恢复检查。
+
+D-04 的接口讨论尚未得到 C/B/A 回复，主线业务目录仍为占位。页面原型使用明确标注的合成数据，真实提交/审批的完成需以后端契约和实际联调证据为准。main 的 protected 标记已开启，但当前可见接口没有列出完整必过规则；具体审核人数和检查项由管理员核对。
