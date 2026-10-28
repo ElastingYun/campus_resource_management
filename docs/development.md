@@ -1,6 +1,6 @@
 # 本地开发与工程验收
 
-本说明覆盖 D-02 的 bootstrap 工程：Vue 基础首页、FastAPI 工程探针、PostgreSQL 连接与 Alembic 基础版本。M1/M2/M3 业务、登录和最终服务拓扑尚未接入。工程提案见 [D-01 PR #5](https://github.com/ElastingYun/campus_resource_management/pull/5)；D-02 对应 [Issue #6](https://github.com/ElastingYun/campus_resource_management/issues/6)。
+本说明覆盖 D-02 的 bootstrap 工程：Vue 基础首页、FastAPI 工程探针、PostgreSQL 连接与 Alembic 基础版本。默认仍是 bootstrap；C 的 M2、认证与审计现可按显式配置接入，真实 M1/M3/资源/通知和最终拓扑仍待联调/确认。工程提案见 [D-01 PR #5](https://github.com/ElastingYun/campus_resource_management/pull/5)；D-02 对应 [Issue #6](https://github.com/ElastingYun/campus_resource_management/issues/6)。
 
 ## 前置条件与配置
 
@@ -60,7 +60,7 @@ npm ci
 npm run dev
 ```
 
-浏览器打开 http://127.0.0.1:5173；Vite 将 /health 代理到本机 8000。容器方式前端使用 Nginx 代理。页面不含真实业务记录，各模块均标记未接入；状态失败时可以重新检查。后端端口变化时应同步修改开发代理配置。
+浏览器打开 http://127.0.0.1:5173；Vite 将 /health 和 /api 代理到本机 8000。容器方式前端使用 Nginx 代理。页面不含真实业务记录，各模块均标记未接入；状态失败时可以重新检查。后端端口变化时应同步修改开发代理配置。
 
 ## 检查与自动化测试
 
@@ -81,7 +81,7 @@ cd backend
 CAMPUS_TEST_POSTGRES=1 .venv/bin/python -m pytest -m integration
 ```
 
-重复 upgrade 验证已应用版本不会重复执行。初始迁移只建立 0001_bootstrap 版本历史，不包含用户、资源或审批业务表。业务迁移由各 owner 提交，不覆盖已合并版本；出现多个 head 时先协调迁移顺序。
+重复 upgrade 验证已应用版本不会重复执行。0001_bootstrap 保留原版本历史；0002_c_identity_approval 新增 C 自有身份、审计和审批表，兼容校验旧 C 基线，重复升级不覆盖数据。业务迁移由各 owner 提交，不覆盖已合并版本；出现多个 head 时先协调迁移顺序。
 
 前端检查在 frontend 中执行：
 
@@ -104,7 +104,7 @@ Python 运行依赖在 requirements.in，开发依赖在 requirements-dev.in，�
 .venv/bin/pip-compile --strip-extras --no-emit-index-url --constraint requirements.txt --output-file requirements-dev.txt requirements-dev.in
 ```
 
-A/C/E 在自己的业务目录实现服务，B/C/E 分别维护主数据、认证审计、通知。bootstrap 不自动挂载业务路由；接入前确认版本化 API、身份权限、共享模型和独立运行边界，最终跨模块演示须走真实网络。D-04 先与 C 对齐 M2/身份契约，与 B 对齐资源数据，M2→M1 写回与 A/C 对齐。
+A/C/E 在自己的业务目录实现服务，B/C/E 分别维护主数据、认证审计、通知。bootstrap 默认关闭 C 业务；CAMPUS_C_ENABLED 及策略配置可显式开启，接入说明见 [C 运行说明](architecture/c-member-backend.md)。版本化 API、共享模型和独立运行边界仍需相关 owner 确认，最终跨模块演示须走真实网络。D-04 先与 C 对齐 M2/身份契约，与 B 对齐资源数据，M2→M1 写回与 A/C 对齐。
 
 ## 验证记录
 
@@ -123,3 +123,8 @@ infra/scripts/ci-smoke.sh 仅允许在带 GITHUB_RUN_ID 的隔离 CI 环境运�
 工作流仅请求 contents: read，checkout 不保留推送凭据；没有生产 secrets、自动合并或部署。检查状态名称固定，管理员在 main 保护规则中要求这些检查和非作者审核后才构成强制门禁。
 
 D-03 PR 基于 D-02 分支，仅评审 CI 增量。先由人工评审并合并 D-02，再将 D-03 的目标分支改为 main 并重新检查后合并；不以依赖 PR 绕过审核。实测记录见 [D03 工程验证记录](testing/d03-quality-verification.md)。
+
+## C 模块容器验证
+
+Compose 默认保持 C 关闭；开启时须转发 CAMPUS_C_ENABLED、CAMPUS_C_CONFIG_FILE 和服务凭据，配置路径在容器 /app 下解析。示例文件随 backend 镜像复制，实际配置须按部署策略提供。
+CI smoke 使用显式合成配置验证 C readiness、独立账号初始化、登录、身份、M2 列表及 /api 代理，再验证数据库中断与恢复；不会伪造资源服务或 M1 占用结果。实际结果见 C 的 PR 检查和验证记录。

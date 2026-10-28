@@ -3,7 +3,7 @@
 状态：**公开契约及业务政策仍待团队评审；C 组件已有代码实现，实际 API、配置与限制见[运行说明](c-member-backend.md)。**
 
 负责人：C（wuyihao）。关联：[需求草案](../requirements/c01-m2-auth-audit.md)、[验收计划](../testing/c01-acceptance-plan.md)、[B-01 资源接口边界](b01-resource-api-draft.md)。
-API 前缀、JSON 命名、分页、标识类型、时间与错误封装需与 D/A/B/E 共同确认；当前组件提供自身的 OpenAPI 和 C 自有版本化 SQL，不据此批准全平台公开契约、共享 schema 或统一迁移工具。
+本文保留设计候选与未决政策。当前实现的前缀、字段、分页、时间、权限、状态与错误见 [C-v1 前端契约](c-v1-frontend-contract.md) 和 [OpenAPI](c-v1-openapi.json)，用于 #10 对齐。工程已复用 D 的统一 Alembic，C-v1 不代表 A/B/E 已批准跨模块契约或生产政策。
 
 ## 1. 所有权与运行边界
 
@@ -211,7 +211,7 @@ Cookie 模式需确定 HttpOnly、HTTPS 下 Secure、SameSite、CSRF、CORS 和�
 | 审计 | 事件、授权查询所需索引 | 字段白名单、幂等、数据范围、保留与失败策略 |
 
 当前 C 自有 SQL 实现上述对象；跨模块只保存稳定关联标识，不引用其他模块私有表，也不据此批准共享 schema。
-当前版本化 SQL 位于 m2_approval/migrations/，由显式迁移入口运行，已有空库重放和校验和测试。统一 Alembic 尚未建立，后续接入不能重复建表或修改已应用历史；详见运行说明。
+原版本化 SQL 位于 m2_approval/migrations/，保持历史不变。统一 Alembic 的 0002_c_identity_approval 执行冻结基线，兼容已应用且校验一致的旧 C 数据库；已有空库、重复执行、旧数据保留与不一致拒绝测试。后续变更新增 revision；详见运行说明。
 
 ## 7. 错误与评审约束
 

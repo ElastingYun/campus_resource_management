@@ -2,7 +2,7 @@
 
 状态：**业务政策仍为 Draft / 待团队评审；C 组件代码已实现，实际运行边界见[接入说明](../architecture/c-member-backend.md)。**
 
-负责人：C（wuyihao）。本文追踪成员 C 的功能需求，本轮专注代码和相关文档，不做任务划分。
+负责人：C（wuyihao）。本文追踪成员 C 的功能需求。2026-10-28 起按负责人授权推进工程接入、GitHub Issue 与 PR，当前交付跟踪 [#14](https://github.com/ElastingYun/campus_resource_management/issues/14)。
 关联：[接口与状态草案](../architecture/c01-m2-auth-api-draft.md)、[验收与任务计划](../testing/c01-acceptance-plan.md)。
 
 依据：仓库 [README](../../README.md)、[AGENTS](../../AGENTS.md)、[B-01 资源边界草案](../architecture/b01-resource-api-draft.md)。
@@ -12,8 +12,8 @@
 
 - 业务目标：交付申请、多级审批、驳回、超时扫描、认证/RBAC、审计及 M1 适配代码，补齐数据库测试和接入说明。
 - 本轮验收：正常、失败、边界和并发有真实测试；文档区分本地实现、契约测试和未完成的真实外部联调。
-- 修改 C 自有目录、对应测试和 C 自有版本化 SQL，不创建全局后端工程、不修改其他成员模块或部署配置。
-- 通过可挂载 FastAPI 组件和显式配置接入统一工程；当前直接使用 PostgreSQL 驱动，不替团队确定 ORM、统一迁移工具或服务拓扑。
+- 业务修改限于 C 自有目录及对应测试；工程接入复用已合入 main 的 D 脚手架，涉及入口、依赖、代理和 Compose 的变更在 #14 / PR 列明并请求 D 评审。
+- 通过显式配置接入 Python 3.13、宿主 SQLAlchemy 连接池和 Alembic；C 的事务仍使用池内的 PostgreSQL 驱动连接，不直接访问其他模块私有表或改变服务拓扑。
 
 | 协作者 | 所有权与本方案依赖 | C 的边界 |
 | --- | --- | --- |
@@ -93,13 +93,13 @@
 | C-OPEN-06 | C、A、D、E | 超时作用于待审批、占用确认还是已生效状态；申请人撤回、生效后撤销、通知和迟到请求补偿 | 撤销需显式许可；截止扫描只处理待审批，不把网络超时当作业务到期 |
 | C-OPEN-07 | C、A、D | 占用/释放/结果查询、幂等键及保留期、版本与终态保护、明确冲突后的去向 | 已有配置式 HTTP 适配器；不修改 M1 表，不宣称真实联调完成 |
 | C-OPEN-08 | C、A/B/E、D、F | 审计接入、事件字段白名单、失败策略、保留期、审计查看范围；通知契约 | 本地成功审计同事务；远程审计和通知投递未实现，不记录秘密 |
-| C-OPEN-09 | D、C、全组 | 统一工程、服务/数据库边界、迁移工具、任务运行方式和 CI；新依赖版本 | 仅交付 C 的可挂载组件和自有 SQL，不改拓扑/CI，不增加消息系统或云依赖 |
+| C-OPEN-09 | D、C、全组 | 统一工程、服务/数据库边界、迁移工具、任务运行方式和 CI；新依赖版本 | 复用 D 已合入的工程，新增 C Alembic revision 与显式后台任务；工程变更待 D Review，生产拓扑仍须 ADR，不增加消息系统或云依赖 |
 
 ## 6. 实施范围、风险与基线化
 
 后续默认实现目录为 `backend/app/modules/m2_approval/`、`backend/app/common/auth/`、`backend/app/common/audit/`，以及对应测试和经确认的版本化迁移。
 共享配置、公共模型、其他成员目录与网络契约的修改，需在实现计划中逐项列明并取得相关 owner 确认。
-当前实现、显式配置、迁移与宿主接入方式见[运行说明](../architecture/c-member-backend.md)，验证证据见[验收记录](../testing/c01-acceptance-plan.md#6-证据记录与当前结果)。暂不维护后续任务划分。
+当前实现、显式配置、迁移与宿主接入方式见[运行说明](../architecture/c-member-backend.md)，最新验证见[工程接入记录](../testing/c14-engineering-integration.md)，早期组件证据保留在[验收记录](../testing/c01-acceptance-plan.md#6-证据记录与当前结果)。前端交付契约见 [C-v1](../architecture/c-v1-frontend-contract.md)。
 
 主要风险是身份越权、审批滥权、错误超时撤销、网络未知结果造成双重操作，以及过度公开申请用途/审批意见。
 由 C 与 F 记录实际风险及决定，必要时联系 A/B/D/E；不以“管理员”身份默认绕过公平性和数据范围。
