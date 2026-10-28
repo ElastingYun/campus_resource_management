@@ -41,20 +41,31 @@ def get_resource_session(request: Request):
         yield session
 
 
+def get_resource_request_id(request: Request) -> str | None:
+    """Read trusted host middleware state, never X-Request-ID or a request body.
+
+    C's current middleware creates request.state.request_id on the server. A host
+    with a different context can inject its own dependency explicitly.
+    """
+    return getattr(request.state, "request_id", None)
+
+
 def create_resources_router(
     *,
     actor_dependency: Callable = get_resource_actor,
     session_dependency: Callable = get_resource_session,
     new_room_settings: NewRoomSettings | None = None,
     audit_sink: AuditSink | None = None,
+    request_id_dependency: Callable = get_resource_request_id,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/resources", tags=["resources"])
 
     def service(
         actor: Annotated[ResourceActor, Depends(actor_dependency)],
         session: Annotated[Session, Depends(session_dependency)],
+        request_id: Annotated[str | None, Depends(request_id_dependency)],
     ):
-        return ResourceService(session, actor, new_room_settings, audit_sink)
+        return ResourceService(session, actor, new_room_settings, audit_sink, request_id)
 
     Service = Annotated[ResourceService, Depends(service)]
 
