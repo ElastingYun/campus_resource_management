@@ -11,7 +11,7 @@
 
 | 项目 | 环境 / 命令 | 结果 |
 | --- | --- | --- |
-| 完整后端 | macOS arm64，Python 3.13.11，独立 PostgreSQL 16.2；`python -m pytest backend -q` | **85 passed, 1 warning in 18.48s**，退出 0 |
+| 完整后端 | macOS arm64，Python 3.13.11，独立 PostgreSQL 16.2；`python -m pytest backend -q` | **86 passed, 1 warning in 15.49s**，退出 0；包含下述 CI 竞态回归修正 |
 | 统一迁移 | 专用本地 PostgreSQL；在 backend 执行 `alembic upgrade head` 两次 | 均退出 0；head 为 0002_c_identity_approval |
 | Ruff | `ruff check backend`；`ruff format --check backend` | All checks passed；37 files already formatted |
 | 编译 / 依赖 | `python -m compileall -q backend/app backend/alembic`；`python -m pip --no-cache-dir check` | 均退出 0；No broken requirements found |
@@ -54,7 +54,7 @@ ruff format --check .
 
 1. 原实现：1 passed，退出 0。
 2. 临时将 Principal.covers 的真实资源范围判定替换为恒真：1 failed，退出 1；越权读取被测试发现。
-3. 恢复原文件：1 passed，退出 0；随后完整回归 85 passed。
+3. 恢复原文件：1 passed，退出 0；当时完整回归 85 passed。补充下述竞态回归后最新完整结果为 86 passed。
 
 测试本身与预期均未修改，破坏版本未提交。三个阶段的原始输出位于执行机器临时文件 `/private/tmp/c14-negative-control.log`，不作为长期仓库产物。
 
@@ -69,3 +69,19 @@ Compose smoke 显式开启合成 C 配置，运行统一迁移及账号引导，
 
 PR 为 [#22](https://github.com/ElastingYun/campus_resource_management/pull/22)。main 合入 D 的 #12 后，仅 docs/development.md 出现文字冲突；负责人于当前会话明确确认“采用 main 的实际合并记录并保留 C 容器验证说明”。已在 44f28a0 同步 main e5e95e3 并落实该策略，代码/迁移没有冲突。此确认只针对冲突处理，不替代非作者 Review。
 剩余交付分别在 [#23](https://github.com/ElastingYun/campus_resource_management/issues/23)（M1 协议/真实网络验收）、[#24](https://github.com/ElastingYun/campus_resource_management/issues/24)（资源可信身份/事务审计）、[#25](https://github.com/ElastingYun/campus_resource_management/issues/25)（通知投递）跟踪；C-01～C-06 已在 #10 回复。
+
+## 6. CI 发现的扫描竞态测试修正
+
+同一 f6e3b9b：PR [run 40681783241](https://github.com/ElastingYun/campus_resource_management/actions/runs/40681783241) 三项成功；push [run 40681773755](https://github.com/ElastingYun/campus_resource_management/actions/runs/40681773755) 的 PostgreSQL lane 为 52 passed、1 failed。没有以通过的另一轮掩盖失败。
+失败为 test_approval_at_deadline_cannot_win_timeout 误要求首次超时扫描必处理 1 条。真实实现使用 FOR UPDATE SKIP LOCKED，审批事务持锁时扫描可合法跳过该行；审批因截止被拒绝、锁释放后应在下一轮恰好关闭一次。
+
+保留截止后审批不得成功的断言，改为断言并发扫描与事务结束后再扫描总计恰好 1 次，并检查最终 TIMED_OUT/version=2、零决定、零 M1 操作、一次超时审计。另新增真实 PostgreSQL 持锁用例：持锁时必须跳过，释放后第一次扫描处理 1 条，之后 0 条，并核对业务事件也恰好一次。
+不是只接受首次扫描 0 或 1 后结束；最终状态与副作用必须收敛，业务实现未改动。两个针对性用例连续运行 12 轮，共 24 次通过，随后全量 86 passed / 1 warning。
+
+复现针对性命令（先配置专用真实测试库）：
+
+```bash
+python -m pytest backend/tests/c_module/test_approval.py::test_approval_at_deadline_cannot_win_timeout backend/tests/c_module/test_approval.py::test_deadline_scan_skips_locked_row_then_closes_it_once -q
+```
+
+最终提交的 push 与 PR 两轮 CI 均需检查，不能仅重跑碰运气或忽略失败检查。

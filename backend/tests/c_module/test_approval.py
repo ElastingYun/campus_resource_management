@@ -204,9 +204,58 @@ def test_approval_at_deadline_cannot_win_timeout(case):
     with ThreadPoolExecutor(max_workers=2) as pool:
         one, two = pool.submit(review), pool.submit(timeout)
         assert one.result() in ("REVIEW_EXPIRED", "STALE_VERSION")
-        assert two.result() == 1
+        first_scan = two.result()
+    # SKIP LOCKED may skip the row while the rejected review owns its lock.
+    # Once both transactions finish, the next scan must close it exactly once.
+    assert first_scan + case.approval.expire_due() == 1
+    assert case.approval.expire_due() == 0
+    stored = case.approval.get(case.principals["student"], application["id"])
+    assert stored["review_status"] == "TIMED_OUT" and stored["version"] == 2
     with case.db.transaction() as conn:
         assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 0
+        assert conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"] == 0
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM c_audit_events WHERE action='m2.timeout'"
+            ).fetchone()["n"]
+            == 1
+        )
+
+
+def test_deadline_scan_skips_locked_row_then_closes_it_once(case):
+    application = submit(case)
+    case.clock.now += timedelta(minutes=10)
+    with case.db.transaction() as owner:
+        owner.execute(
+            "SELECT id FROM c_applications WHERE id=%s FOR UPDATE", (application["id"],)
+        ).fetchone()
+        # A genuinely separate PostgreSQL connection must skip, without waiting.
+        assert case.approval.expire_due() == 0
+        assert (
+            owner.execute(
+                "SELECT review_status FROM c_applications WHERE id=%s", (application["id"],)
+            ).fetchone()["review_status"]
+            == "REVIEWING"
+        )
+    assert case.approval.expire_due() == 1
+    assert case.approval.expire_due() == 0
+    stored = case.approval.get(case.principals["student"], application["id"])
+    assert stored["review_status"] == "TIMED_OUT" and stored["version"] == 2
+    with case.db.transaction() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM c_decisions").fetchone()["n"] == 0
+        assert conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"] == 0
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM c_audit_events WHERE action='m2.timeout'"
+            ).fetchone()["n"]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM c_business_events WHERE type='application.timed_out'"
+            ).fetchone()["n"]
+            == 1
+        )
 
 
 def test_flow_configuration_does_not_change_inflight_snapshot(case):
