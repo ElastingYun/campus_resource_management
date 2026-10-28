@@ -55,6 +55,8 @@ onMounted(checkHealth);
         <h2>自习座位预约</h2>
         <p>搜索座位、预约、签到与使用记录。</p>
         <small>业务未接入</small>
+        <p><a href="#resources-prototype">教室与座位管理演示 →</a></p>
+        <a href="#resources">打开资源管理</a>
       </section>
       <section>
         <span>M2</span>
