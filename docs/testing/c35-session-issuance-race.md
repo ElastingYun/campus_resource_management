@@ -19,7 +19,7 @@
 | --- | --- |
 | 密码校验期间停用账号 | 原校验结果不能签发会话，重新启用后没有可复活的竞争会话 |
 | 密码校验期间换为另一有效散列 | 返回INVALID_CREDENTIALS，无会话写入，失败计数/审计保留 |
-| 密码校验期间散列变为无效UTF8文本 | 同样安全拒绝，不因字符串比较抛内部异常 |
+| 密码校验期间散列变为含非ASCII字符的无效散列文本 | 同样安全拒绝，不因字符串比较抛内部异常 |
 | 会话和成功审计正在提交时并发停用 | 两个真实事务完成后，新会话被撤销，重新启用也不恢复 |
 
 实际命令：
@@ -42,3 +42,5 @@ python -m pytest -q
 原始日志位于临时 `/private/tmp/c35-negative-control.log`，最初复现日志为 `/private/tmp/c-login-race-before.log`，8轮输出为 `/private/tmp/c-login-race-repeat.log`。仓库未提交破坏实现。
 
 目标Python3.13/PostgreSQL17及Engineering/C-B验收，以本修复PR的实际Checks为准，完成后补运行链接。工作流、依赖和B文件未改；生产部署、M1 #23及通知 #25不在本修复验收范围。AI辅助分析/实现/验证，非作者Review与最终合并由人类决定。
+
+已提交 [PR #36](https://github.com/ElastingYun/campus_resource_management/pull/36)。固定30872a9的 [C/B push40796564921](https://github.com/ElastingYun/campus_resource_management/actions/runs/40796564921)、[C/B PR40796769527](https://github.com/ElastingYun/campus_resource_management/actions/runs/40796769527)、[Engineering push40796564833](https://github.com/ElastingYun/campus_resource_management/actions/runs/40796564833)、[Engineering PR40796769536](https://github.com/ElastingYun/campus_resource_management/actions/runs/40796769536) 均成功，包含目标Python3.13/PostgreSQL17和Compose。后续提交仍按对应Checks核对。
