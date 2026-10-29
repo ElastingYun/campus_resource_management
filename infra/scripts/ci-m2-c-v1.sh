@@ -20,6 +20,8 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
+acceptance_stage=configuration
+trap 'echo "::error file=infra/scripts/ci-m2-c-v1.sh,line=${LINENO}::M2 acceptance failed during ${acceptance_stage}"' ERR
 umask 077
 export CAMPUS_C_ENABLED=true
 export CAMPUS_C_CONFIG_FILE="$RUNNER_TEMP/c-v1-runtime.json"
@@ -44,8 +46,10 @@ host = {'permissions': {'read': 'synthetic.resource.read', 'manage': 'synthetic.
 Path(os.environ['CAMPUS_RESOURCE_HOST_CONFIG']).write_text(json.dumps(host))
 CONFIG
 cd "$c_backend"
+acceptance_stage=migrations
 python -m alembic upgrade head
 python -m alembic upgrade head
+acceptance_stage=account-provisioning
 for role in synthetic-student synthetic-first-reviewer synthetic-second-reviewer synthetic-resource-reader; do
   case "$role" in
     synthetic-student) account=m2-live-student ;;
@@ -62,7 +66,8 @@ for role in synthetic-student synthetic-first-reviewer synthetic-second-reviewer
 python -m app.common.auth.bootstrap --username m2-browser-student --department-id synthetic-department \
   --roles-file "$RUNNER_TEMP/m2-roles.json" --role synthetic-student --room 9007199254740993 \
   --password-env CAMPUS_BOOTSTRAP_PASSWORD
-python "$repo_root/infra/scripts/seed-m2-room-acceptance.py"
+acceptance_stage=synthetic-resource-seed
+PYTHONPATH="$c_backend" python "$repo_root/infra/scripts/seed-m2-room-acceptance.py"
 CAMPUS_RESOURCES_SERVICE_TOKEN="$(cat "$RUNNER_TEMP/m2-resource-session")"
 export CAMPUS_RESOURCES_SERVICE_TOKEN
 PYTHONPATH="$repo_root/infra/runtime:$c_backend" python -m uvicorn m2_resources:create_app --factory --host 127.0.0.1 --port 18000 > "$RUNNER_TEMP/c-v1-backend.log" 2>&1 &
@@ -70,6 +75,7 @@ backend_pid=$!
 cd "$repo_root"
 npm run dev --prefix frontend -- --host 127.0.0.1 > "$RUNNER_TEMP/c-v1-frontend.log" 2>&1 &
 frontend_pid=$!
+acceptance_stage=service-readiness
 python - <<'WAIT'
 import json, time, urllib.request, urllib.error
 for port in (18000,5173):
@@ -83,5 +89,7 @@ for port in (18000,5173):
     else:
         raise SystemExit('Real C+B service/proxy did not become ready')
 WAIT
+acceptance_stage=real-http-acceptance
 npm run test:integration --prefix frontend
+acceptance_stage=real-browser-acceptance
 npm run test:e2e --prefix frontend

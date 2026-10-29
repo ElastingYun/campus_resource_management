@@ -1,6 +1,7 @@
 """Synthetic isolated-CI data and server-only resource session, never startup seed."""
 
 import os
+import sys
 from datetime import time, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -103,4 +104,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(
+            f"::error file=infra/scripts/seed-m2-room-acceptance.py::Synthetic seed failed with {type(error).__name__}",
+            file=sys.stderr,
+        )
+        raise
