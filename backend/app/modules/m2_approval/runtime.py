@@ -22,6 +22,7 @@ from app.modules.m2_approval.api import install
 from app.modules.m2_approval.clients import HttpM1Gateway, HttpResourceGateway
 from app.modules.m2_approval.domain import Step, Workflow
 from app.modules.m2_approval.migrate import verify_schema
+from app.modules.m2_approval.room_policy import room_is_eligible
 from app.modules.m2_approval.service import ApprovalService
 from app.modules.m2_approval.settings import ComponentConfiguration, EndpointConfiguration
 from app.modules.m2_approval.worker import OperationWorker, RetrySettings
@@ -59,6 +60,8 @@ class ComponentRuntime:
             room_path=configuration.resources.room_path,
             service_token=self._tokens["resources"],
             timeout_seconds=configuration.resources.timeout_seconds,
+            require_access_scope=configuration.submission.room_access_policy
+            == "campus_or_own_department",
         )
         flow = configuration.workflow
         self.workflow = Workflow(
@@ -129,7 +132,16 @@ class ComponentRuntime:
 
     def _submission(self, principal, room, starts_at, ends_at, now):
         rules = self.configuration.submission
-        if not rules.allow_cross_department and principal.department_id != room.department_id:
+        if rules.room_access_policy == "campus_or_own_department":
+            try:
+                eligible = room_is_eligible(room, principal.department_id)
+            except ValueError:
+                raise ServiceError(
+                    503, "RESOURCE_UNAVAILABLE", "暂时无法确认教室准入信息"
+                ) from None
+            if not eligible:
+                raise ServiceError(403, "DEPARTMENT_DENIED", "不满足该教室的申请资格")
+        elif not rules.allow_cross_department and principal.department_id != room.department_id:
             raise ServiceError(403, "DEPARTMENT_DENIED", "不满足该教室的申请资格")
         if starts_at < now + timedelta(seconds=rules.minimum_notice_seconds):
             raise ServiceError(422, "START_TOO_EARLY", "不满足申请提前量要求")

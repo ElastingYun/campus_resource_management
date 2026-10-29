@@ -60,6 +60,7 @@ CAMPUS_M1_SERVICE_TOKEN=<配置 M1 时提供>
 资源/M1 的标准 SecretStr 字段支持环境变量和根 `.env`；自定义 token_env 名称需显式导出到进程环境。日志和配置 repr 不显示实际凭据。
 配置文件的结构示例位于 `backend/app/modules/m2_approval/examples/runtime.synthetic.json`，名称和内容明确为合成示例，须按批准政策和实际服务修改。
 所有审批层级/期限、自审、驳回理由、撤销许可、院系准入、提前量、时长和时间粒度显式给出。布尔字符串、URL 内嵌凭据、跨主机路径和不合法租约均拒绝。
+2026-10-29 已批准的校园级/本院系准入通过 `submission.room_access_policy="campus_or_own_department"` 显式启用，且 `allow_cross_department=false`。配置示例、B v2 元数据和兼容边界见 [C-40 说明](c40-approved-room-policy.md)。旧合成示例保留 legacy 行为，不代表满足新规则。
 `m1=null` 允许先对接身份与审批；最终审批后保持占用待确认。只有 M1 确认后 effective 才为 true。
 `access_management=null` 关闭账号授权管理；启用后还须 auth.manage、原/新范围校验及非越权委派。
 
@@ -103,6 +104,7 @@ M1 的 base_url、apply_path、release_path、query_path、token_env、I/O 超�
 损坏响应、重定向、错误标识和网络中断保留未知结果。查询或重发使用同一操作与内容，不生成新标识猜测执行结果。
 M1 需要持久幂等与版本/终态保护；本地 generation/租约隔离不能代替远端防止“释放先到、旧创建后到”复活占用。
 释放只撤销该申请来源；M1 仍须考虑其他个人预约、审批或维修。重试耗尽进入 ATTENTION，保持业务事实并等待受控处理。
+已批准的个人预约冲突规则是 M1 原子拒绝整室占用、保留个人预约；C 保留 PASSED 审批事实，以 APPLY_CONFLICT 和 effective=false 表示未生效。A 的原子拒绝实现与真实网络验收仍在 #23，不能先写 active 来源再补偿释放。
 本地幂等及操作记录尚无自动清理任务，不能删掉历史键后继续接受重放。
 
 ## 7. 迁移与合成演示

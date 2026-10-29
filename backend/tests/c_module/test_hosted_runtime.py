@@ -41,9 +41,10 @@ def alembic_config():
     return config
 
 
-def hosted(database, tmp_path, monkeypatch, *, with_m1=False):
+def hosted(database, tmp_path, monkeypatch, *, with_m1=False, room_policy="legacy"):
     policy = json.loads(EXAMPLE.read_text())
     policy["scan_interval_seconds"] = 0.05
+    policy["submission"]["room_access_policy"] = room_policy
     if with_m1:
         policy["m1"] = {
             "base_url": "http://m1.contract.test",
