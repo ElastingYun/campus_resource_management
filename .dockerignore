@@ -7,3 +7,8 @@
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
+
+.contract
+
+**/test-results
+**/playwright-report
