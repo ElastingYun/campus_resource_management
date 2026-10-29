@@ -1,0 +1,170 @@
+import { afterAll, expect, test } from "vitest";
+import { env } from "node:process";
+import { createCSession, isObject } from "../src/modules/m2-approval/c-session";
+import { createCGateway } from "../src/modules/m2-approval/c-gateway";
+const origin = env.CAMPUS_M2_LIVE_ORIGIN;
+if (env.CI === "true" && !origin)
+  throw new Error(
+    "CI requires the real C service origin; do not silently skip",
+  );
+const nativeFetch = globalThis.fetch.bind(globalThis);
+afterAll(() => {
+  globalThis.fetch = nativeFetch;
+});
+
+test.skipIf(!origin)(
+  "real C-v1 HTTP and PostgreSQL: authentication, response-loss recovery, decisions and persistent query",
+  async () => {
+    const password = env.CAMPUS_BOOTSTRAP_PASSWORD;
+    if (!password)
+      throw new Error("Explicit synthetic CI password is required");
+    let dropFirstSubmission = true;
+    const discardedResponses: { status: number; id: unknown }[] = [];
+    const submissions: { key: string | null; body: string }[] = [];
+    globalThis.fetch = async (input, init) => {
+      const path = String(input);
+      const response = await nativeFetch(new URL(path, origin), init);
+      if (path === "/api/v1/m2/applications" && init?.method === "POST") {
+        submissions.push({
+          key: new Headers(init.headers).get("Idempotency-Key"),
+          body: String(init.body),
+        });
+        if (dropFirstSubmission) {
+          dropFirstSubmission = false;
+          const discarded = {
+            status: response.status,
+            id: undefined as unknown,
+          };
+          discardedResponses.push(discarded);
+          const value: unknown = await response.json();
+          discarded.id = isObject(value) ? value.id : undefined;
+          throw new TypeError(
+            "Synthetic client-side response loss after real C commit",
+          );
+        }
+      }
+      return response;
+    };
+    const student = createCSession();
+    await student.login("m2-live-student", password);
+    expect(student.state.value?.identity.permissions).toContain("m2.submit");
+    const gateway = createCGateway(student);
+    expect((await gateway.load()).canSubmit).toBe(true);
+    expect((await gateway.roomOptions!()).total).toBe(121);
+    expect((await gateway.roomOptions!({ q: "OTHER" })).items).toEqual([]);
+    expect((await gateway.roomOptions!({ q: "DISABLED" })).items).toEqual([]);
+    const finalPage = await gateway.roomOptions!({ offset: 120 });
+    expect(finalPage.total).toBe(121);
+    expect(finalPage.items).toHaveLength(1);
+    expect(finalPage.items[0]?.id).toBe("9007199254740993");
+    const management = await nativeFetch(
+      new URL("/api/v1/resources/rooms", origin),
+      {
+        headers: {
+          Authorization: `Bearer ${student.state.value!.accessToken}`,
+        },
+      },
+    );
+    expect(management.status).toBe(403);
+    const starts = new Date(Date.now() + 86400000),
+      ends = new Date(starts.getTime() + 3600000);
+    const draft = {
+      roomId: "9007199254740993",
+      purpose: `Synthetic D-C network ${crypto.randomUUID()}`,
+      startsAt: starts.toISOString(),
+      endsAt: ends.toISOString(),
+    };
+    await expect(gateway.submit(draft)).rejects.toThrow("结果尚未确认");
+    expect(submissions).toHaveLength(1);
+    expect(discardedResponses[0]?.status).toBe(201);
+    expect(typeof discardedResponses[0]?.id).toBe("string");
+    await expect(gateway.submit(draft)).rejects.toThrow("先恢复结果");
+    const record = await gateway.recover!();
+    expect(submissions).toHaveLength(2);
+    expect(record.id).toBe(discardedResponses[0]?.id);
+    expect(submissions[1]).toEqual(submissions[0]);
+    expect(record.effective).toBe(false);
+    expect(gateway.pending?.()).toBeUndefined();
+    expect(
+      (await gateway.load()).applications.filter(
+        (item) => item.id === record.id,
+      ),
+    ).toHaveLength(1);
+    const studentDetail = await gateway.detail!(record.id);
+    expect(studentDetail.allowedActions).toEqual([]);
+    const beforeApproval = await gateway.integration!(record.id);
+    expect(beforeApproval.applicationId).toBe(record.id);
+    expect(beforeApproval.version).toBe(studentDetail.version);
+    expect(beforeApproval.generation).toBe(0);
+    expect(beforeApproval.operations).toEqual([]);
+    expect(beforeApproval.effective).toBe(false);
+    await expect(
+      gateway.decide!(
+        record.id,
+        "APPROVE",
+        "Synthetic forbidden action",
+        studentDetail.version,
+      ),
+    ).rejects.toThrow("无权");
+
+    for (const username of ["m2-live-reviewer-one", "m2-live-reviewer-two"]) {
+      const session = createCSession();
+      await session.login(username, password);
+      const reviewer = createCGateway(session);
+      const detail = await reviewer.detail!(record.id);
+      expect(detail.allowedActions).toContain("APPROVE");
+      await reviewer.decide!(
+        record.id,
+        "APPROVE",
+        "Synthetic network acceptance",
+        detail.version,
+      );
+      await session.logout();
+    }
+    const final = await gateway.detail!(record.id);
+    expect(final.reviewLabel).toBe("审批已通过");
+    expect(final.effective).toBe(false);
+    expect(final.integrationLabel).toBe("正在确认占用");
+    expect(final.history).toHaveLength(2);
+    const progress = await gateway.integration!(record.id);
+    expect(progress.version).toBe(final.version);
+    expect(progress.integrationStatus).toBe("APPLY_PENDING");
+    expect(progress.generation).toBe(1);
+    expect(progress.effective).toBe(false);
+    expect(progress.operations).toHaveLength(1);
+    expect(progress.operations[0]).toMatchObject({
+      generation: 1,
+      kind: "APPLY",
+      state: "PENDING",
+      attempts: 0,
+      errorCode: null,
+    });
+    expect(await gateway.integration!(record.id)).toEqual(progress);
+    const anonymousProgress = await nativeFetch(
+      new URL(`/api/v1/m2/applications/${record.id}/integration`, origin),
+    );
+    expect(anonymousProgress.status).toBe(401);
+    const oldToken = student.state.value!.accessToken;
+    await student.logout();
+    const revoked = await nativeFetch(new URL("/api/v1/auth/me", origin), {
+      headers: { Authorization: `Bearer ${oldToken}` },
+    });
+    expect(revoked.status).toBe(401);
+    const revokedProgress = await nativeFetch(
+      new URL(`/api/v1/m2/applications/${record.id}/integration`, origin),
+      {
+        headers: { Authorization: `Bearer ${oldToken}` },
+      },
+    );
+    expect(revokedProgress.status).toBe(401);
+    await student.login("m2-live-student", password);
+    const reloaded = await createCGateway(student).load();
+    expect(
+      reloaded.applications.find((item) => item.id === record.id)?.purpose,
+    ).toBe(draft.purpose);
+    expect(
+      reloaded.applications.find((item) => item.id === record.id)?.effective,
+    ).toBe(false);
+    await student.logout();
+  },
+);
