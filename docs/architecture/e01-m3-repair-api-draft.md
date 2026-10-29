@@ -4,21 +4,25 @@
 
 ## 1. 当前代码基线与契约差异
 
-`main`（本草案起草时为 `e5e95e3`）已有 FastAPI、SQLAlchemy、Alembic、pytest、Vue 和工程 CI；`backend/app/modules/m3_repair/` 及 `backend/app/common/notifications/` 仍只有占位文件。M1 业务见未合并 [PR #18](https://github.com/ElastingYun/campus_resource_management/pull/18)，C 的认证/M2 见未合并 [PR #22](https://github.com/ElastingYun/campus_resource_management/pull/22) 及后续依赖 PR；B 资源也在独立 PR。下表为**观察到的候选实现**，不是主线已经可调用的接口。
+截至 2026-10-29，本草案核对的 `main` 为 `6531430`：已有 FastAPI、SQLAlchemy、Alembic、pytest、Vue、工程 CI，且 A 的 M1 后端 [PR #18](https://github.com/ElastingYun/campus_resource_management/pull/18) 已合并。E 的最小报修单代码在独立的 [Draft PR #62](https://github.com/ElastingYun/campus_resource_management/pull/62)，尚未挂入主应用；`backend/app/common/notifications/` 仍只有占位文件。C 的认证/M2 见未合并 [PR #22](https://github.com/ElastingYun/campus_resource_management/pull/22) 及后续依赖 PR；B 资源也在独立 PR。下表区分**主线已有能力**和**待接入能力**，不能把单个模块可运行等同于全链路可用。
 
 | 对口 | 当前候选实现 | M3 接入前要解决 |
 | --- | --- | --- |
-| A / M1 | `PUT/GET /api/v1/m1/restrictions/m3_repair/{source_id}`、`POST .../release`；整数 `room_id`，`end_at=null`，验收解除 `reason=accepted`，来源权限 `m1:restriction:m3_repair` | 与 B 的教室 ID 表达、服务身份、响应及错误格式共同评审；M3 不写 A 的表 |
-| B / 资源 | 教室静态属性由 B 持有；其候选公开 JSON ID 是十进制字符串 | 确定 M3 用哪个可信读取接口、ID 规范及教室停用/注销的处理 |
-| C / 身份审计 | C 候选后端使用 Bearer 会话、权限及教室范围；M2 另持久记录远端操作并恢复未知结果 | C 为 M3 提供可信主体/服务账号与审计入口；M3 不信任前端自报角色或房间范围 |
+| A / M1 | 主线已有 `PUT/GET /api/v1/m1/restrictions/m3_repair/{source_id}`、`POST .../release`；整数 `room_id`，`end_at=null`，验收解除 `reason=accepted`，来源权限 `m1:restriction:m3_repair` | 正式服务身份与 M3 真实 HTTP 写回仍待 A/C/D/E 联调；M3 不写 A 的表 |
+| B / 资源 | B 已反馈稳定教室 ID 为规范正十进制字符串，范围 `1..9223372036854775807`；`code/name/location` 只是可变展示字段 | E 服务端校验范围后可无损转整数对接 A；浏览器不得经 JS Number 转换大整数。M3 报修目录资格、停用/注销政策仍待 B/C/E/F 决定 |
+| C / 身份审计 | C 候选后端使用 Bearer 会话、权限及教室范围；`AuditService.record_in_session` 可加入调用方 SQLAlchemy/PostgreSQL 事务 | C 为 M3 提供可信主体与显式权限、同事务审计适配；不得借用 M2 的 `m2.submit` 权限或事后拼接成功审计 |
 | D / 工程 | `main` 提供基础入口、数据库连接与迁移，业务 router 尚未统一挂载 | D 在契约评审后接入路由、后台任务、配置、迁移顺序和运行拓扑 |
 | F / 页面 | M3 页面仍待真实接口 | 确认列表/详情、错误提示、待核实状态与验收评价的数据需要 |
 
 特别注意：C 的 M2 HTTP 网关当前期待含 `operation_id`、`result` 的远端回执，A 的 M1 候选限制接口返回的是来源限制记录；两者尚未完全对齐。M3 可以借鉴 C 的持久操作思路，**不能复制其未对齐的线协议**。
 
+B 的普通申请人目录 `GET /api/v1/resources/room-options` 当前按 M2 的 `m2.submit` 与相应可见范围适配；这**不能自动成为 M3 报修人的目录**。管理读 `GET /api/v1/resources/rooms/{id}` 也需 C 明确授予管理或服务能力和房间范围。B 的静态 `enabled`、M1 维修限制、M3 工单状态各有独立含义；目录缺失、资源停用或解除单一工单来源，均不能解释为取消既有工单或恢复全部座位。
+
 ## 2. M3 面向页面的候选接口
 
 路径统一以 `/api/v1/m3` 开始；具体字段、分页、错误封装和状态码由 E/C/F 与 D 一起定稿。写操作中的主体来自服务端可信会话，不接受请求体内的任意 `actor_id`、权限或工单状态作为授权依据。返回只包含调用方有权查看的字段，读写响应禁缓存。
+
+[E-02 Draft PR #62](https://github.com/ElastingYun/campus_resource_management/pull/62) 只实现上报 `REPORTED`、查询本人列表/详情和重复提交保护；下表其余操作仍为候选设计。E-02 的 B/C 适配及 D 路由接线尚未完成，未配置依赖时接口拒绝请求。
 
 | 方法与候选路径 | 意图及候选输入 | 候选输出/关键拒绝 | 待确认 |
 | --- | --- | --- | --- |
@@ -35,7 +39,7 @@
 
 ## 3. M3 → M1 候选写回与未知结果恢复
 
-以下路径和字段来自 A 的 [PR #18 契约草案](https://github.com/ElastingYun/campus_resource_management/blob/feat/m1-d-bootstrap-integration/docs/architecture/a-m1-api-v1.md)，只用作对接讨论。M3 的稳定工单 ID 作为 `source_id`；若采用 UUID，需确认它符合 A 目前的 1～64 位来源 ID 规则。示例教室 ID、时间及凭据都是合成占位值。
+以下路径和字段来自 A 已进入主线的 [M1 API 契约](https://github.com/ElastingYun/campus_resource_management/blob/main/docs/architecture/a-m1-api-v1.md)；M3 的真实网络调用及服务身份尚未验收。M3 的稳定工单 ID 作为 `source_id`；若采用 UUID，需确认它符合 A 目前的 1～64 位来源 ID 规则。示例教室 ID、时间及凭据都是合成占位值。
 
 ```http
 PUT /api/v1/m1/restrictions/m3_repair/WO-17
@@ -71,6 +75,7 @@ Content-Type: application/json
 | 事项 | 提案及需确认处 |
 | --- | --- |
 | 用户认证 | 复用 C 的可信 Bearer 会话和权限/教室范围；M3 后端逐次校验。具体 `m3:*` 权限名和角色由 C/E/F 定稿 |
+| 成功审计 | 新工单和最小成功审计应在同一 SQLAlchemy/PostgreSQL 事务写入；E 提供回调端口，C 的适配使用调用方 Session，不自行提交或回滚。审计失败时工单回滚；同键重放不新增创建审计。审计只含可信主体、请求标识、工单/教室 ID、动作、前后状态与时间，不含故障描述或凭据 |
 | 服务认证 | M3→M1 使用仅有 `m1:restriction:m3_repair` 的服务身份；不可把浏览器 token、开发头或工单创建者身份直接当服务凭据 |
 | 数据所有权 | E 持有工单、状态历史、操作意图及 M3 迁移；A/B/C 各自持有座位、主数据、身份审计。共享外键、ID 格式与迁移顺序需 A/B/C/D/E 评审 |
 | 通知 | 工单升级和状态变化可产生事件，但本轮不实现发送。E 的通知接收、回执查询、去重与 C 的 [#25](https://github.com/ElastingYun/campus_resource_management/issues/25) 单独形成契约；不把本地事件记为送达 |
