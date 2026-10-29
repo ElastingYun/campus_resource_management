@@ -219,11 +219,11 @@ export function createCGateway(
     query: RoomOptionsQuery = {},
   ): Promise<RoomOptionsPage> {
     const current = identity(),
-      parameters = roomQuery(query),
       request = ++roomRequest;
     rooms = [];
     roomOwner = undefined;
     try {
+      const parameters = roomQuery(query);
       const search = new URLSearchParams({
         q: parameters.q,
         limit: String(parameters.limit),

@@ -37,12 +37,23 @@ test("ordinary applicant searches, pages beyond 100 choices and submits a BIGINT
   await expect(
     page.getByRole("button", { name: "下一页教室", exact: true }),
   ).toBeDisabled();
+  await page
+    .getByLabel("选择教室", { exact: true })
+    .selectOption("9007199254740993");
+  await page.screenshot({
+    path: `test-results/${info.project.name}-m2-real-room-picker.png`,
+    fullPage: true,
+  });
   await page.getByLabel("搜索教室", { exact: true }).fill("OTHER");
   await page.getByRole("button", { name: "查询教室", exact: true }).click();
   await expect(
     page.getByText("没有符合条件的授权教室，请调整搜索条件。", { exact: true }),
   ).toBeVisible();
   await expect(pagination).toContainText("符合范围 0 间");
+  await expect(
+    page.getByRole("button", { name: "提交申请", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("选择教室", { exact: true })).toHaveValue("");
   await page.getByLabel("搜索教室", { exact: true }).fill("OWN");
   await page.getByRole("button", { name: "查询教室", exact: true }).click();
   await expect(pagination).toContainText("第 1 页");

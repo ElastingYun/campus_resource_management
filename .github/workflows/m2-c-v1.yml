@@ -69,6 +69,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: m2-room-options-browser
-          path: frontend/test-results/*-m2-real-room-options.png
+          path: frontend/test-results/*-m2-real-room-*.png
           if-no-files-found: ignore
           retention-days: 7

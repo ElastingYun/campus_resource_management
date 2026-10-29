@@ -370,6 +370,9 @@ onMounted(reload);
                 : "填写用途与时段。时间按设备当地时区输入，最终由服务端校验。"
             }}
           </p>
+          <p v-if="live && !canSubmit" class="integration-pending">
+            当前身份没有申请权限，暂不能新建申请。
+          </p>
           <M2RoomPicker
             v-if="live && gateway.roomOptions"
             :load-page="gateway.roomOptions"

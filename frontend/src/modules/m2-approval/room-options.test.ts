@@ -194,6 +194,25 @@ describe("ordinary room options boundary", () => {
     await expect(old).rejects.toThrow("查询或登录状态已变化");
     await expect(gateway.submit(draft())).rejects.toThrow("不能提交");
   });
+  it("clears earlier selection authority on invalid queries and same-subject token changes", async () => {
+    const value = session();
+    const fetch = vi.fn().mockImplementation(async () => json(page()));
+    vi.stubGlobal("fetch", fetch);
+    const gateway = createCGateway(value);
+    await gateway.roomOptions!();
+    await expect(gateway.roomOptions!({ limit: 0 })).rejects.toThrow(
+      "搜索最多",
+    );
+    await expect(gateway.submit(draft())).rejects.toThrow("不能提交");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await gateway.roomOptions!();
+    value.state.value = {
+      ...value.state.value!,
+      accessToken: "synthetic-rotated-token",
+    };
+    await expect(gateway.submit(draft())).rejects.toThrow("不能提交");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it("sends the selected BIGINT string only after a current directory read; a failed refresh clears it", async () => {
     const fetch = vi
       .fn()

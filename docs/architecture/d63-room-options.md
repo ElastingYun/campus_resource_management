@@ -48,11 +48,19 @@ Node网络验收保留响应丢失原键恢复、实际持久化、越权、两�
 
 ## 验证记录
 
-- Node22：`npm run test --prefix frontend` **185 passed / 13 files**；目录与选择新增34项，保留原有进度/会话/恢复测试。
+- Node22：`npm run test --prefix frontend` **186 passed / 13 files**；目录与选择新增35项，保留原有进度/会话/恢复测试。
 - `npm run build --prefix frontend`：浏览器和Node测试类型检查、生产构建通过。新增Playwright精确依赖及锁文件，npm安装审计0漏洞；生产包不引入Playwright。
 - 本机无C/PostgreSQL，网络测试NOT RUN；Playwright本机2 skipped，NOT RUN。CI缺origin直接失败，不静默跳过。
 - 隔离副本去掉翻页清空选择，定向1 failed（旧选择残留）；恢复原字节后1 passed。未改仓库为破坏版本或弱化断言。
 - 初次本地回归的旧canSubmit断言仍假设管理列表预加载，已按“可打开表单但未选教室不可发POST”更新，并保留目录403/不发送POST断言。另一个新增测试误点CSS最后子元素，已改为按实际“下一页教室”按钮选择，原分页断言保留。
-- infra宿主/初始化脚本Ruff与格式、AST、bash语法及diff检查通过。实际远程网络/浏览器结果以本分支Checks后续记录。
+- infra宿主/初始化脚本Ruff与格式、AST、bash语法及diff检查通过。实际远程网络/浏览器证据见下方；后续提交以各自Checks为准。
 
 非作者Review需B/C核对契约/显式安装，负责人检查界面。当前没有改main、合并依赖PR或发布生产。A真实身份与占用#23、E/M3迁移汇合和通知保持独立，不能用本轮目录与申请证据代替它们。AI辅助实现、验证和记录，最终决策/Review/合并由人完成。
+
+## 实际 CI 与修正证据
+
+首次0912184的真实目录run40836438020失败，而工程CI通过。检查发现绝对路径启动的初始化脚本未显式加入组合后端PYTHONPATH；本机路径探针也复现当前工作目录不自动加入脚本模块路径。cf59689修正该导入路径，增加仅含阶段/异常类别的错误注释，保留原业务断言与两组浏览器验收。原失败没有隐藏或删除。
+
+固定D `cf59689c7c6323ee1f1f74229f9638d5225f6f34` 的 [真实B/C网络与浏览器push40836989287](https://github.com/ElastingYun/campus_resource_management/actions/runs/40836989287)、[PR40836993812](https://github.com/ElastingYun/campus_resource_management/actions/runs/40836993812)，以及[工程push40836989215](https://github.com/ElastingYun/campus_resource_management/actions/runs/40836989215)、[PR40836993861](https://github.com/ElastingYun/campus_resource_management/actions/runs/40836993861) 四轮均success。缺少真实origin时CI不能skip；固定源执行了真实客户端网络用例与Chromium桌面/移动两项完整流程，截图产物m2-room-options-browser已保存并取回检查。
+
+补充第35项单元回归验证非法新查询会清除先前目录授权，同主体令牌更换也拒绝旧缓存；本机186项及构建通过。增加无申请权限的表单提示，以及浏览器翻页选择后搜索清空的断言与目录截图。最终提交的远端结果在PR中逐一核对，不沿用旧提交的绿灯。
