@@ -9,6 +9,7 @@
 - `origin/main=04159d378fcb79a0e5664cd7c15665a37640c329`；M1 #18 已合入 main（合并点 `6531430`），正式身份和 A/C/E 写回仍待验收。
 - F 连接账号为 `Rankyer`，E PR 作者为 `zhengzheyu126`。插件实际创建 Issue/分支均 403；本机明确指定 Rankyer 的推送 dry-run 已成功，同账号 REST 已创建 [F-01 #75](https://github.com/ElastingYun/campus_resource_management/issues/75) 和 [F-02 #76](https://github.com/ElastingYun/campus_resource_management/issues/76)，两条通道分开记录。
 - F 起点为本地 `docs/f01-autonomous-workflow` / `22aa271`，原提交保留。heartbeat `f-github` 已注册 ACTIVE，首次定时触发与手动检查分开验收。
+- F 原分支已完整推送，文档 [PR #77](https://github.com/ElastingYun/campus_resource_management/pull/77) 已建立并请求 D/E Review；已在 #69/#15 发布具体接口/基线问题。此后创建的 #75/#76/#77 不计入上方调查开始时的 32/24 快照。
 
 | 跟踪项 | 固定 head / base 与实际事实 | 未完成与 F 动作 |
 | --- | --- | --- |

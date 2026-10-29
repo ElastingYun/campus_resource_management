@@ -45,7 +45,7 @@ F-01 等为本地计划标识；已创建的真实 Issue 单列链接，不重�
 2026-10-29 恢复：当前分支 `docs/f01-autonomous-workflow`，恢复起点 `22aa271`，初始工作区干净。已更新全部远端分支，`origin/main=04159d3`；本地 main 没有被重置或自动合并。
 
 - GitHub 连接可读，账号 `Rankyer`，仓库元数据报告 `push=true`。但实际插件创建 Issue 和分支均返回 `403 Resource not accessible by integration`，不能据此宣称插件具备写能力。
-- 本机指定 `credential.username=Rankyer` 的非交互 `git push --dry-run` 已成功；REST `GET /user` 确认同一 Rankyer，已实际创建 F-01 Issue #75。凭据仅由 GCM 在进程内提供，不输出或落盘。推送、PR 和评论发布结果以远端及日志为准。
+- 本机指定 `credential.username=Rankyer` 的非交互推送已成功，保留原提交历史；同账号 REST 已创建 Issue #75/#76、[PR #77](https://github.com/ElastingYun/campus_resource_management/pull/77)，并在 #69/#15 发布具体问题。已请求 D/E Review；凭据仅在进程内使用，不输出或落盘。
 - heartbeat `f-github` 已创建为 `ACTIVE`，绑定本聊天；配置可回读。运行日志、去重状态和单轮锁位于仓库 `logs/f-github-cycle/` 下的 Git 忽略文件，详见执行说明。
 - 首轮手动调查核对了 32 个开放 Issue、24 个开放 PR、对应 head 的 PR 工作流及正式 Review；没有把 AI `COMMENTED` 当作人工批准。定时触发、远端发布与真实 M3 联调仍需分别验收。
 

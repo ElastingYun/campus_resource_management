@@ -82,6 +82,7 @@ M3 包括故障上报、派单、维修、超时升级、完工验收和评价�
 - 本机 Git Credential Manager 2.5.0 已存在，明确指定 `credential.username=Rankyer` 后非交互推送 dry-run 成功；使用进程内 GCM 凭据的 REST `GET /user` 确认同一账号，并实际创建 [F-01 Issue #75](https://github.com/ElastingYun/campus_resource_management/issues/75)。原本地提交可完整推送，不采用重建远端提交的快照方案。不要输出、落盘或让用户粘贴令牌。
 - 本聊天 heartbeat `f-github` 已注册为 `ACTIVE`，约每 5 分钟唤醒一次；不另起 Windows 计划任务或代码执行器。持久状态为 `logs/f-github-cycle/state.log`，历史为 `events.log`，锁为 `active.lock.log`；这些文件经 `*.log` 忽略，不纳入提交。
 - 首轮是手动恢复，不等于首次定时触发成功；应用内自动化卡片和本机日志分别核对调度状态与实际结果。通过应用自动化面板暂停，或在本聊天要求停止。
+- 已完整推送原 `docs/f01-autonomous-workflow` 分支（包括 24ff1e1/22aa271），创建 [PR #77](https://github.com/ElastingYun/campus_resource_management/pull/77) 并请求 D/E Review；[F-02 #76](https://github.com/ElastingYun/campus_resource_management/issues/76) 记录页面契约待决，在 E #69 和 D #15 发布了具体问题。恢复后先查 PR/日志，不重复创建这些任务或评论。
 - 当前业务测试、容器、完整迁移和真实 M3 网络联调均 **NOT RUN**；远端 CI 仅按固定 head 调查，不冒充本机复测。
 
 ### 前一会话快照（仅供解释历史）
