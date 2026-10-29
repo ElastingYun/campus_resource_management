@@ -2,9 +2,23 @@
 
 > 校园资源服务平台 · 软件过程管理与工程伦理课程实践项目（2026–2027 秋季学期）
 
-  本仓库由 6 名成员共同维护，以自习座位预约为核心，覆盖整教室预约审批与物业报修工单，并建设身份权限、空间资源、通知与审计等公共能力。
+本仓库由 6 名成员共同维护，以自习座位预约为核心，覆盖整教室预约审批与物业报修工单，并建设身份权限、空间资源、通知与审计等公共能力。
 
 本项目的交付目标不仅是可运行的软件，还包括**可追踪的需求、可审查的 AI 协作过程、可验证的业务行为，以及可复现的构建、部署与回滚**。项目规则和工程过程记录与代码一同接受版本管理。
+
+## 当前开发状态
+
+以下状态以 2026-10-29 的 [`main` 提交 `1e663e9`](https://github.com/ElastingYun/campus_resource_management/commit/1e663e92d582241efcab764cd3ae60011563a092) 为准。**代码或 PR 已合并，不等于主应用已挂载该模块，更不等于跨模块网络联调已完成。**
+
+| 区域 | 当前已进入 `main` 的内容 | 尚未完成的接入 |
+| --- | --- | --- |
+| 工程与测试 | Vue 3 / TypeScript / Vite、FastAPI、PostgreSQL 17、Alembic、Compose；前端 Vitest、后端 pytest、Ruff 和 GitHub Actions 已运行 | 自动部署、生产发布与回滚尚未启用 |
+| A / M1 后端 | [PR #18](https://github.com/ElastingYun/campus_resource_management/pull/18) 已合并：搜索、预约、签到、提醒/违约任务、历史、运营与整室限制接口；`app.main` 已挂载 M1 路由 | 正式身份、通知发送、后台任务部署及 M2/M3 的真实网络写回仍待对接；默认受保护接口不接受开发请求头 |
+| B / 资源与 M1 前端 | 资源接口、教室/座位管理、座位查询、预约/本人记录/运营组件代码已入仓；主前端入口可打开资源管理与座位查询，也可查看合成原型 | 资源后端尚未挂到主应用；预约、本人记录与运营组件尚未接入主入口；真实会话与 A 接口联调待验收 |
+| C/D / M2 与身份 | M2 前端工作台及独立的 C-v1 网络验收工作流已入仓；后者使用固定 C/B 服务源码 | 当前 `app.main` 未挂载 M2/正式认证；C 的[统一工程 PR #22](https://github.com/ElastingYun/campus_resource_management/pull/22)及[M2→M1 联调 #23](https://github.com/ElastingYun/campus_resource_management/issues/23)仍在进行 |
+| E/F / M3 | 工单创建/本人查询、派单及开工前确认整室下架的代码和迁移已入仓；[F 的页面规划](https://github.com/ElastingYun/campus_resource_management/pull/77)已合并 | M3 路由尚未挂到主应用；真实 M1 写回/验收恢复与 F 的[本人报修客户端 PR #82](https://github.com/ElastingYun/campus_resource_management/pull/82)仍待接入 |
+
+[`main` 的 Engineering CI](https://github.com/ElastingYun/campus_resource_management/actions/runs/40857820890) 在上述提交上完成前端测试与构建、后端 PostgreSQL 检查、Compose 构建与恢复；[C-v1 网络验收工作流](https://github.com/ElastingYun/campus_resource_management/actions/runs/40857821061)使用固定的外部 C/B 代码运行，不能作为主应用已挂载 C 服务的证据。有关未决接口和状态，以各模块 Issue、PR 及[集成跟踪表](docs/testing/f-integration-tracker.md)为准。
 
 ## 1. 项目范围
 
@@ -19,7 +33,7 @@
 
 课程任务书规定，M1 需要支持按整点小时预约，单次默认最多 **4 小时**（参数可调）；签到使用与教室关联的动态编码或二维码；预约前 **15 分钟**提醒，开始后 **10 分钟**未签到再次提醒，开始后 **15 分钟**仍未签到则自动取消、释放座位并记录违约。还需支持院系自习室准入限制、插座标记、预约历史与运营管理。
 
-> 上述为需求边界，不代表功能已经实现。更细的行为、异常场景和验收标准应写入 `docs/requirements/` 并经团队确认。
+> 上述为需求边界；已交付的 M1 后端行为及尚未接入的链路见“当前开发状态”。更细的行为、异常场景和验收标准以 `docs/requirements/` 及团队确认的决策为准。
 
 ### 1.2 必须完成的跨模块链路
 
@@ -29,7 +43,7 @@
 | **M3 → M1** | 自习室存在“维修中”工单 | 该室全部座位从可预约列表下架；工单**验收通过**后恢复可用性 |
 | **M1 状态追溯** | 任一座位占用/下架/释放 | 可追溯变更来源：M1 自身预约、M2 审批占用、M3 报修下架 |
 
-跨模块更改必须遵循**公开接口契约**，不允许某个模块绕过接口直接修改另一个模块拥有的数据。恢复座位时也必须重新检查是否存在其他有效占用或下架原因，避免错误释放。具体冲突优先级、幂等性和失败补偿规则，应先形成架构决策。
+跨模块更改必须遵循**公开接口契约**，不允许某个模块绕过接口直接修改另一个模块拥有的数据。恢复座位时也必须重新检查是否存在其他有效占用或下架原因，避免错误释放。具体冲突优先级、幂等性和失败补偿规则应由团队确认。M2 遇到已有个人预约时拒绝整室占用的政策已明确，但 A/C 的原子处理、可信服务身份与终态保护仍在 [Issue #23](https://github.com/ElastingYun/campus_resource_management/issues/23) 中对齐。
 
 课程期末要求展示**真实的跨模块网络调用**，因此服务的运行边界必须能够支持该演示；后端最终拆分为几个运行服务，需由架构决策记录（ADR）确定。单仓库不等于必须单进程。
 
@@ -40,18 +54,18 @@
 | 前端 | **Vue 3** | 已确认 |
 | 后端 | **Python + FastAPI** | 已确认 |
 | 数据库 | **PostgreSQL** | 已确认 |
-| 前端工程化 | TypeScript + Vite | D-02 已接入基础工程 |
-| Python ORM / 数据迁移 | SQLAlchemy + Alembic | D-02 已接入连接与基础版本历史 |
-| 自动化测试 | pytest；前端页面测试工具待定 | D-02 已提供工程行为测试 |
-| 容器化 | Docker + Docker Compose | D-02 提供开发配置，实际运行证据见 PR |
-| CI/CD | GitHub Actions | D-03 已配置工程检查，执行证据见 PR |
+| 前端工程化 | TypeScript + Vite | 已锁定版本并接入主前端工程 |
+| Python ORM / 数据迁移 | SQLAlchemy + Alembic | 主线已有 D、M1、M3 的版本化迁移；C 汇合迁移待接入 |
+| 自动化测试 | pytest、Vitest；另有 Playwright 验收用例 | 主线 CI 执行前端测试、后端测试与数据库迁移；浏览器验收按对应工作流核对 |
+| 容器化 | Docker + Docker Compose | 开发配置与 CI 冒烟已接入 |
+| CI/CD | GitHub Actions | 工程与 C-v1 网络检查已配置；生产部署未启用 |
 | 运行环境 | 华为云 ECS（课程代金券） | 拟采用，资源规格及环境隔离方案待确认 |
 
 **开发原则：** 保持 Monorepo（单仓库）；按业务模块明确代码所有权；尽量共享经过评审的工程约定，而不是由 6 个 AI Agent 各自创建一套框架。
 
 ## 3. 六人分工与代码所有权
 
-本项目共 6 人，分为 3 个模块组，每组 2 人。A–F 为占位符，首次成员会议后将其替换为真实姓名或 GitHub 用户名，并保留相应分工记录。
+本项目共 6 人，分为 3 个模块组，每组 2 人。A–F 是本仓库沿用的课程分工标记；具体任务负责人以对应 Issue / PR 为准。
 
 | 成员 | 主要职责 | 主要负责目录 | 跨模块/公共职责 |
 | --- | --- | --- | --- |
@@ -66,29 +80,30 @@
 
 ## 4. 仓库组织（目录骨架）
 
-> **以下目录骨架已建立，空目录通过 `.gitkeep` 纳入 Git 版本管理。** D-02/D-03 已提供工程底座与 CI，C 已实现 M2、认证/RBAC 和审计。业务入口按配置显式开启，真实资源、占用与通知链路及最终拓扑仍待确认/联调。目录调整需提交 ADR 或经相关负责人评审。
+> 以下为 `main` 的主要目录摘要；有代码的模块不一定已经挂到主应用，仍为空的目录继续用 `.gitkeep` 占位。最终服务拓扑与跨模块接口须经相关负责人评审。
 
 ```text
 campus_resource_management/
 ├── frontend/                         # Vue 3 前端
 │   └── src/
 │       ├── modules/
-│       │   ├── m1-reservation/        # B
-│       │   ├── m2-approval/           # D
-│       │   └── m3-repair/             # F
+│       │   ├── m1-reservation/        # B：资源、查询、预约、本人记录、运营组件
+│       │   ├── m2-approval/           # D：申请/审批工作台与状态展示
+│       │   └── m3-repair/             # F：页面仍待接入
 │       └── shared/                   # 通用组件、API 客户端、类型
 ├── backend/                          # FastAPI 后端
 │   ├── app/
 │   │   ├── modules/
-│   │   │   ├── m1_reservation/        # A
-│   │   │   ├── m2_approval/           # C
-│   │   │   └── m3_repair/             # E
+│   │   │   ├── m1_reservation/        # A：业务路由已挂载
+│   │   │   ├── m2_approval/           # C：主线仍为空目录
+│   │   │   ├── m3_repair/             # E：工单/派单/开工代码，路由未挂载
+│   │   │   └── resources/             # B：资源接口代码，路由未挂载
 │   │   └── common/
 │   │       ├── resources/             # B
 │   │       ├── auth/                  # C
 │   │       ├── audit/                 # C
 │   │       └── notifications/         # E
-│   ├── alembic/                      # 结构迁移：业务成员编写，D 集成
+│   ├── alembic/                      # D/M1/M3 迁移；C 汇合仍待接入
 │   └── tests/                        # 单元/接口/跨模块集成测试
 ├── database/                         # 种子数据与数据库说明
 ├── infra/                            # Docker、运行环境及部署脚本（D）
@@ -99,13 +114,13 @@ campus_resource_management/
 │   ├── testing/                      # 测试策略与验收证据
 │   └── risks.md                      # 规划中，尚未创建：风险及工程伦理跟踪
 ├── .github/
-│   └── workflows/                    # GitHub Actions（D）
+│   └── workflows/                    # 工程 CI 与独立 C-v1 网络验收
 ├── README.md
 ├── AGENTS.md                         # 全部 Coding Agent 的项目级规则
 └── .gitignore
 ```
 
-目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/` 已提供基础版本及 C 自有身份/审计/审批迁移；`.github/workflows/ci.yml` 提供构建、测试、真实数据库与容器检查；自动部署、生产发布尚未启用。`.gitignore` 用于排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
+目录树省略了占位用的 `.gitkeep` 文件。`backend/alembic/versions/` 已含 `0001_bootstrap`、M1 的 `0002–0006` 及 M3 的 `e02/e03`；C 的共享迁移接入仍由 [Issue #61](https://github.com/ElastingYun/campus_resource_management/issues/61) 跟踪。`.github/workflows/ci.yml` 执行构建、测试、真实数据库与容器检查；自动部署、生产发布尚未启用。`.gitignore` 排除本地环境文件、依赖、缓存与构建产物，允许提交只含安全示例的 `.env.example`。
 
 共享目录和跨模块文件的修改必须通知对应负责人；涉及公共层、schema 或 API 契约的 PR，须安排受影响模块成员参与 Review。
 
@@ -145,7 +160,7 @@ git switch -c feat/m1-seat-search
 
 ### 运行与测试
 
-D-02 提供 Vue 3 基础首页、FastAPI 存活/就绪探针、PostgreSQL 连接、Alembic 版本历史和开发容器。C 的 M2/登录/RBAC/审计可显式接入；默认配置保留 bootstrap，真实 M1/M3/资源/通知联调仍未完成。完整步骤、配置、验证命令与限制见 [本地开发与工程验收](docs/development.md)。 C 的开启、账号初始化和状态边界见 [C 运行说明](docs/architecture/c-member-backend.md)，前端联调见 [C-v1 契约](docs/architecture/c-v1-frontend-contract.md)。
+D-02 的工程启动方式仍适用；主线已挂载 M1 后端，资源/M2/M3 的实现状态见本文开头的状态表。工程探针成功只表示基础服务和数据库可用，不代表业务接口或跨模块链路通过验收。工程配置和启动步骤见 [本地开发与工程验收](docs/development.md)，M1 的专用配置、种子与任务命令见 [后端补充说明](backend/README.md)。`docs/development.md` 保留 D-02 初始化时的业务状态描述，当前交付状态以本页为准。
 
 安装 Docker 和 Compose v2 后，可在仓库根目录运行（先替换 .env 中的本地示例密码）：
 
@@ -154,7 +169,7 @@ cp .env.example .env
 docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
 ```
 
-浏览器打开 http://127.0.0.1:8080。也可按开发说明用 Node 22、Python 3.13 在本机分别运行前后端。数据库未配置/不可达时 readiness 明确返回 503，存活探针仍可验证进程。本机与 CI 的实际验证证据以各 PR 为准，D-03 提供工程 CI，分支保护由管理员配置；生产发布与回滚尚未启用。
+浏览器打开 http://127.0.0.1:8080。首页可进入座位查询、资源管理及 M2 工作台；`#seat-search-prototype`、`#resources-prototype`、`#m2-prototype` 使用合成数据。默认真实前端适配器尚未全部接线；M1 受保护接口默认拒绝开发请求头，不能把页面演示当作正式业务联调。也可按开发说明用 Node 22、Python 3.13 在本机分别运行前后端。数据库未配置/不可达时 readiness 返回 503，存活探针仍可验证进程。实际 CI 证据见上方运行记录；生产发布与回滚尚未启用。
 
 ## 6. 第一次 Review：范围与完成判据
 
@@ -183,10 +198,10 @@ docker compose --env-file .env -f infra/compose.yaml up --build -d --wait
 
 ## 8. 决策状态与后续工作
 
-**已经确认**：六人三组的职责方向；核心技术栈 Vue 3 / FastAPI / PostgreSQL；共同使用 GitHub 和 AI Coding Agent；当前优先完成第一次 Review 准备。
+**已经落地**：六人三组的职责方向；Vue 3 / FastAPI / PostgreSQL 的工程与 CI；M1 后端、资源与部分前端、M2 前端、M3 工单基础代码和迁移。具体可运行边界以本文“当前开发状态”为准。
 
-**仍需明确并形成记录**：真实组员映射；前后端工程版本与依赖锁定；FastAPI 服务部署边界与网络接口；数据库数据所有权和并发策略；认证方式；测试/生产环境隔离与发布审批；关键业务边界与错误处理。
+**仍需实现或确认**：C 的主线认证/M2 接入与 A/C 迁移汇合；M2→M1、M3→M1 的可信网络写回和失败恢复；资源所有权与通知实际发送；M3 前端入口；正式服务拓扑、生产环境隔离与发布回滚。部分政策已在 Issue 中作出决定，但相应代码及跨模块验收仍需完成。
 
-建议由 D 先建立统一工程骨架，A/C/E 与 B 确认跨模块契约及共享资源，F 将需求与任务依赖纳入 GitHub Issues；在上述依赖完成后六人再并行实现功能。
+下一轮优先对齐 [#23 M2→M1 占用协议](https://github.com/ElastingYun/campus_resource_management/issues/23)、[#61 A/C 迁移汇合](https://github.com/ElastingYun/campus_resource_management/issues/61) 与 [#73 M3 整室维修限制确认](https://github.com/ElastingYun/campus_resource_management/issues/73)；B/D/E/F 按各自 Issue 继续推进前端、主数据、部署与网络验收。
 
 > **附加项说明**：课程提供了“自然语言会话驱动的业务代理”作为附加项目，建议在核心业务、接口和工程验收稳定后再规划；如实现，应通过各模块公开 API 操作真实业务，不得直接读取或修改其他模块内部数据。
