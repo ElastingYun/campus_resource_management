@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -99,7 +100,90 @@ def initialize(uri: str) -> None:
         engine.dispose()
 
 
-def run(source: Path, frontend: Path) -> int:
+def free_port() -> int:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def stop(process) -> None:
+    if process is None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def run_browser(frontend: Path, origin: str, temporary: Path, channel: str | None) -> int:
+    import httpx
+
+    node = shutil.which("node")
+    if not node:
+        raise RuntimeError("Node.js required for browser acceptance")
+    browser_origin = f"http://127.0.0.1:{free_port()}"
+    environment = dict(os.environ)
+    environment.update(
+        CAMPUS_DEV_BACKEND_URL=origin,
+        VITE_B_RESOURCE_BROWSER_ACCEPTANCE="1",
+        B_RESOURCE_BROWSER_ORIGIN=browser_origin,
+    )
+    environment.pop("VITE_B_RESOURCE_ACCEPTANCE_ORIGIN", None)
+    environment.pop("B_RESOURCE_BROWSER_CHANNEL", None)
+    if channel:
+        environment["B_RESOURCE_BROWSER_CHANNEL"] = channel
+    process = None
+    with (temporary / "vite.log").open("wb") as log:
+        try:
+            process = subprocess.Popen(
+                [
+                    node,
+                    str(frontend / "node_modules/vite/bin/vite.js"),
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    browser_origin.rsplit(":", 1)[1],
+                    "--strictPort",
+                ],
+                cwd=frontend,
+                env=environment,
+                stdout=log,
+                stderr=log,
+            )
+            with httpx.Client(base_url=browser_origin, trust_env=False, timeout=0.2) as client:
+                for _ in range(150):
+                    if process.poll() is not None:
+                        raise RuntimeError("Isolated Vite service exited before readiness")
+                    try:
+                        response = client.get(
+                            "/src/modules/m1-reservation/resources/browser/index.html"
+                        )
+                        if response.status_code == 200:
+                            break
+                    except httpx.HTTPError:
+                        pass
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError("Isolated Vite readiness timed out")
+            return subprocess.run(
+                [
+                    node,
+                    str(frontend / "node_modules/@playwright/test/cli.js"),
+                    "test",
+                    "--config",
+                    "src/modules/m1-reservation/resources/browser/playwright.config.mts",
+                ],
+                cwd=frontend,
+                env=environment,
+                check=False,
+            ).returncode
+        finally:
+            stop(process)
+
+
+def run(source: Path, frontend: Path, browser: bool = False, channel: str | None = None) -> int:
     import httpx
     import pgserver
     import psycopg
@@ -116,9 +200,7 @@ def run(source: Path, frontend: Path) -> int:
                 version = connection.execute("SHOW server_version").fetchone()[0]
             print(f"Isolated PostgreSQL {version}; fixed C 51b65bf / B 4ee2fe5", flush=True)
             initialize(uri)
-            with socket.socket() as listener:
-                listener.bind(("127.0.0.1", 0))
-                port = listener.getsockname()[1]
+            port = free_port()
             origin = f"http://127.0.0.1:{port}"
             environment = dict(os.environ)
             environment.update(
@@ -175,15 +257,11 @@ def run(source: Path, frontend: Path) -> int:
                     env=frontend_environment,
                     check=False,
                 )
-            return result.returncode
+            if result.returncode or not browser:
+                return result.returncode
+            return run_browser(frontend, origin, Path(temporary), channel)
         finally:
-            if process is not None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            stop(process)
             server.cleanup()
 
 
@@ -195,5 +273,22 @@ if __name__ == "__main__":
         type=Path,
         default=Path(__file__).resolve().parents[3] / "frontend",
     )
+    parser.add_argument(
+        "--browser", action="store_true", help="Also run actual desktop/mobile Chromium"
+    )
+    parser.add_argument(
+        "--browser-channel",
+        choices=["chrome"],
+        help="Use an installed Chrome; default uses Playwright Chromium",
+    )
     arguments = parser.parse_args()
-    raise SystemExit(run(arguments.combined_source.resolve(), arguments.frontend.resolve()))
+    if arguments.browser_channel and not arguments.browser:
+        parser.error("--browser-channel requires --browser")
+    raise SystemExit(
+        run(
+            arguments.combined_source.resolve(),
+            arguments.frontend.resolve(),
+            arguments.browser,
+            arguments.browser_channel,
+        )
+    )
