@@ -11,9 +11,11 @@ from app.modules.m3_repair import service
 from app.modules.m3_repair.contracts import (
     RoomPolicy,
     TicketActor,
+    TicketAudit,
     TicketError,
     get_room_policy,
     get_ticket_actor,
+    get_ticket_audit,
 )
 from app.modules.m3_repair.schemas import TicketCreate, TicketOut, TicketPage
 
@@ -30,6 +32,7 @@ def create_router(
     *,
     actor_dependency: Callable = get_ticket_actor,
     room_policy_dependency: Callable = get_room_policy,
+    audit_dependency: Callable = get_ticket_audit,
     session_dependency: Callable = get_ticket_session,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/m3", tags=["m3"])
@@ -42,10 +45,13 @@ def create_router(
         response: Response,
         actor: Actor,
         room_policy: Annotated[RoomPolicy, Depends(room_policy_dependency)],
+        audit: Annotated[TicketAudit, Depends(audit_dependency)],
         session: DbSession,
         idempotency_key: Annotated[str, Header(pattern=r"^[!-~]{1,128}$")],
     ) -> TicketOut:
-        ticket, created = service.create_ticket(session, actor, room_policy, data, idempotency_key)
+        ticket, created = service.create_ticket(
+            session, actor, room_policy, audit, data, idempotency_key
+        )
         if not created:
             response.status_code = 200
         response.headers["Cache-Control"] = "no-store"

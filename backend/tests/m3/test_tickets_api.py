@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import Column, MetaData, String, Table, create_engine, func, insert, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -27,6 +27,35 @@ class StubRoomPolicy:
             raise TicketError(404, "room_not_found", "教室不存在或不可报修")
 
 
+audit_entries = Table(
+    "test_m3_audit_entries",
+    MetaData(),
+    Column("ticket_id", String(36), primary_key=True),
+    Column("actor_id", String(64), nullable=False),
+    Column("request_id", String(36), nullable=False),
+    Column("after_status", String(32), nullable=False),
+)
+
+
+class RecordingAudit:
+    def __init__(self):
+        self.fail_after_write = False
+
+    def record_created(self, session, *, actor, ticket_id, room_id, request_id, now):
+        assert session.in_transaction()
+        assert room_id == "1" and now.tzinfo is not None
+        session.execute(
+            insert(audit_entries).values(
+                ticket_id=ticket_id,
+                actor_id=actor.subject_id,
+                request_id=request_id,
+                after_status="REPORTED",
+            )
+        )
+        if self.fail_after_write:
+            raise RuntimeError("synthetic audit failure after writing")
+
+
 @pytest.fixture
 def ticket_client():
     engine = create_engine(
@@ -35,7 +64,11 @@ def ticket_client():
         poolclass=StaticPool,
     )
     tickets.create(engine)  # Isolated test database only; production uses Alembic.
-    holder = {"actor": TicketActor("user-1", can_create=True, can_read_own=True)}
+    audit_entries.create(engine)
+    holder = {
+        "actor": TicketActor("user-1", can_create=True, can_read_own=True),
+        "audit": RecordingAudit(),
+    }
     rooms = StubRoomPolicy()
     app = FastAPI()
     app.state.engine = engine
@@ -43,6 +76,7 @@ def ticket_client():
         create_router(
             actor_dependency=lambda: holder["actor"],
             room_policy_dependency=lambda: rooms,
+            audit_dependency=lambda: holder["audit"],
         )
     )
     with TestClient(app) as client:
@@ -69,6 +103,11 @@ def ticket_count(engine) -> int:
         return session.scalar(select(func.count()).select_from(tickets))
 
 
+def audit_count(engine) -> int:
+    with Session(engine) as session:
+        return session.scalar(select(func.count()).select_from(audit_entries))
+
+
 def test_create_then_read_only_own_ticket(ticket_client):
     client, holder, _, engine = ticket_client
     created = create(client)
@@ -85,6 +124,7 @@ def test_create_then_read_only_own_ticket(ticket_client):
     assert own.headers["cache-control"] == "no-store"
     assert own.json() == {"items": [item], "limit": 1, "offset": 0}
     assert ticket_count(engine) == 1
+    assert audit_count(engine) == 1
 
     holder["actor"] = TicketActor("user-2", can_create=True, can_read_own=True)
     assert client.get("/api/v1/m3/tickets").json()["items"] == []
@@ -106,6 +146,7 @@ def test_idempotent_replay_and_conflicting_payload(ticket_client):
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "idempotency_key_reused"
     assert ticket_count(engine) == 1
+    assert audit_count(engine) == 1
 
     rooms.enabled = True
     holder["actor"] = TicketActor("user-2", can_create=True, can_read_own=True)
@@ -113,6 +154,22 @@ def test_idempotent_replay_and_conflicting_payload(ticket_client):
     assert second_user.status_code == 201
     assert second_user.json()["id"] != first.json()["id"]
     assert ticket_count(engine) == 2
+    assert audit_count(engine) == 2
+
+
+def test_audit_failure_rolls_back_ticket_and_audit_then_same_key_can_retry(ticket_client):
+    client, holder, _, engine = ticket_client
+    holder["audit"].fail_after_write = True
+    failed = create(client)
+    assert failed.status_code == 503
+    assert failed.json()["detail"]["code"] == "audit_unavailable"
+    assert ticket_count(engine) == 0
+    assert audit_count(engine) == 0
+
+    holder["audit"].fail_after_write = False
+    assert create(client).status_code == 201
+    assert ticket_count(engine) == 1
+    assert audit_count(engine) == 1
 
 
 def test_invalid_room_input_and_unavailable_room_do_not_write(ticket_client):
@@ -194,5 +251,26 @@ def test_default_room_port_is_closed():
         )
         assert response.status_code == 503
         assert response.json()["detail"]["code"] == "room_policy_unconfigured"
+    assert ticket_count(engine) == 0
+    engine.dispose()
+
+
+def test_default_audit_port_is_closed():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    tickets.create(engine)
+    app = FastAPI()
+    app.state.engine = engine
+    app.include_router(
+        create_router(
+            actor_dependency=lambda: TicketActor("user-1", can_create=True, can_read_own=True),
+            room_policy_dependency=StubRoomPolicy,
+        )
+    )
+    with TestClient(app) as client:
+        response = create(client)
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "audit_unconfigured"
     assert ticket_count(engine) == 0
     engine.dispose()

@@ -8,7 +8,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.modules.m3_repair.contracts import RoomPolicy, TicketActor, TicketError
+from app.modules.m3_repair.contracts import RoomPolicy, TicketActor, TicketAudit, TicketError
 from app.modules.m3_repair.schemas import TicketCreate, TicketOut, TicketPage
 from app.modules.m3_repair.tables import tickets
 
@@ -53,6 +53,7 @@ def create_ticket(
     session: Session,
     actor: TicketActor,
     room_policy: RoomPolicy,
+    audit: TicketAudit,
     data: TicketCreate,
     key: str,
 ) -> tuple[TicketOut, bool]:
@@ -71,6 +72,7 @@ def create_ticket(
         room_policy.require_reportable(int(data.room_id), actor)
         now = datetime.now(UTC)
         ticket_id = str(uuid4())
+        request_id = str(uuid4())
         session.execute(
             insert(tickets).values(
                 id=ticket_id,
@@ -84,6 +86,18 @@ def create_ticket(
                 updated_at=now,
             )
         )
+        try:
+            audit.record_created(
+                session,
+                actor=actor,
+                ticket_id=ticket_id,
+                room_id=data.room_id,
+                request_id=request_id,
+                now=now,
+            )
+        except Exception as exc:
+            session.rollback()
+            raise TicketError(503, "audit_unavailable", "暂时无法确认报修审计") from exc
         session.commit()
         return (
             TicketOut(
