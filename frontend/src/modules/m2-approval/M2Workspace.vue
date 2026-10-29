@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import M2RoomPicker from "./M2RoomPicker.vue";
 import M2IntegrationProgress from "./M2IntegrationProgress.vue";
 import { GatewayMessage } from "./models";
 import type {
@@ -369,14 +370,25 @@ onMounted(reload);
                 : "填写用途与时段。时间按设备当地时区输入，最终由服务端校验。"
             }}
           </p>
+          <p v-if="live && !canSubmit" class="integration-pending">
+            当前身份没有申请权限，暂不能新建申请。
+          </p>
+          <M2RoomPicker
+            v-if="live && gateway.roomOptions"
+            :load-page="gateway.roomOptions"
+            :disabled="!canWrite || writing"
+            @select="draft.roomId = $event?.id ?? ''"
+          />
           <fieldset :disabled="!canWrite || writing">
-            <label for="m2-room">选择教室</label
-            ><select id="m2-room" v-model="draft.roomId" required>
-              <option value="">请选择教室</option>
-              <option v-for="room in rooms" :key="room.id" :value="room.id">
-                {{ room.name }} · {{ room.location }}
-              </option>
-            </select>
+            <template v-if="!live || !gateway.roomOptions"
+              ><label for="m2-room">选择教室</label
+              ><select id="m2-room" v-model="draft.roomId" required>
+                <option value="">请选择教室</option>
+                <option v-for="room in rooms" :key="room.id" :value="room.id">
+                  {{ room.name }} · {{ room.location }}
+                </option>
+              </select></template
+            >
             <label for="m2-purpose">申请用途</label
             ><textarea
               id="m2-purpose"
@@ -412,7 +424,11 @@ onMounted(reload);
           <button
             class="primary"
             type="submit"
-            :disabled="!canWrite || writing"
+            :disabled="
+              !canWrite ||
+              writing ||
+              (live && !!gateway.roomOptions && !draft.roomId)
+            "
           >
             {{ writing ? "正在处理…" : prototype ? "演示提交" : "提交申请" }}
           </button>
@@ -423,7 +439,7 @@ onMounted(reload);
               <span>{{ live ? "本页记录" : "当前记录" }}</span
               ><strong>{{ applications.length }}</strong>
             </div>
-            <div>
+            <div v-if="!live">
               <span>可选教室</span><strong>{{ rooms.length }}</strong>
             </div>
             <p>

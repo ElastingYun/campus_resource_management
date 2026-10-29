@@ -6,7 +6,10 @@ import type {
   M2Gateway,
   RoomOption,
   WorkspaceQuery,
+  RoomOptionsQuery,
+  RoomOptionsPage,
 } from "./models";
+import { parseRoomOptions, roomQuery } from "./room-options";
 import { parseIntegrationProgress } from "./integration-progress";
 import { isObject, isUuid } from "./c-session";
 import type { CSession, CSessionState } from "./c-session";
@@ -139,6 +142,16 @@ export function createCGateway(
   options: CGatewayOptions = {},
 ): M2Gateway & { hasAnyPending(): boolean } {
   let rooms: RoomOption[] = [];
+  let roomOwner: CSessionState | undefined;
+  let roomRequest = 0;
+  const sameSession = (
+    left: CSessionState | undefined,
+    right: CSessionState | null,
+  ) =>
+    !!left &&
+    !!right &&
+    left.accessToken === right.accessToken &&
+    left.identity.subject_id === right.identity.subject_id;
   const pending = new Map<string, PendingWrite>();
   const identity = (): CSessionState => {
     const current = session.state.value;
@@ -202,39 +215,54 @@ export function createCGateway(
     }
     return new GatewayMessage("服务返回异常，请稍后核对。");
   };
-  async function loadRooms(current: CSessionState): Promise<RoomOption[]> {
-    if (options.loadRooms) return options.loadRooms(current.accessToken);
-    const data = await call(
-      "/api/v1/resources/rooms?limit=100&offset=0",
-      {},
-      current,
-    );
-    if (
-      !isObject(data) ||
-      !Array.isArray(data.items) ||
-      !Number.isSafeInteger(data.total) ||
-      data.total !== data.items.length
-    )
-      throw new GatewayMessage("教室列表尚未完整接入，暂不能新建申请。");
-    return data.items
-      .map((item) => {
-        if (
-          !isObject(item) ||
-          typeof item.id !== "string" ||
-          !item.id ||
-          typeof item.name !== "string" ||
-          typeof item.location !== "string" ||
-          typeof item.enabled !== "boolean"
-        )
-          throw new GatewayMessage("教室响应格式异常，暂不能新建申请。");
-        return {
-          enabled: item.enabled,
-          id: item.id,
-          name: item.name,
-          location: item.location,
+  async function roomOptions(
+    query: RoomOptionsQuery = {},
+  ): Promise<RoomOptionsPage> {
+    const current = identity(),
+      request = ++roomRequest;
+    rooms = [];
+    roomOwner = undefined;
+    try {
+      const parameters = roomQuery(query);
+      const search = new URLSearchParams({
+        q: parameters.q,
+        limit: String(parameters.limit),
+        offset: String(parameters.offset),
+      });
+      const data = await call(
+        `/api/v1/resources/room-options?${search}`,
+        {},
+        current,
+      );
+      const page = parseRoomOptions(data, parameters);
+      if (request !== roomRequest || !sameSession(current, session.state.value))
+        throw new GatewayMessage("查询或登录状态已变化，请重新查询教室。");
+      rooms = [...page.items];
+      roomOwner = current;
+      return page;
+    } catch (cause) {
+      if (cause instanceof GatewayMessage) throw cause;
+      if (cause instanceof M2HttpError) {
+        const messages: Record<string, string> = {
+          identity_unconfigured: "教室目录尚未配置，请联系维护者。",
+          RESOURCE_IDENTITY_UNAVAILABLE:
+            "暂时无法核对教室目录身份，请稍后重试。",
+          audit_unavailable: "暂时无法记录目录访问结果，请稍后重试。",
         };
-      })
-      .filter((item) => item.enabled);
+        throw new GatewayMessage(
+          cause.serverCode && messages[cause.serverCode]
+            ? messages[cause.serverCode]
+            : cause.status === 401
+              ? "会话已失效，请重新登录。"
+              : cause.status === 403
+                ? "当前账号没有选择教室的权限。"
+                : cause.status === 422
+                  ? "教室查询条件无效，请检查搜索内容。"
+                  : "教室目录暂不可用，请重新查询；不会改用管理列表或演示教室。",
+        );
+      }
+      throw new GatewayMessage("教室查询未完成，请重新查询。");
+    }
   }
   async function execute(operation: PendingWrite) {
     const current = identity();
@@ -311,35 +339,36 @@ export function createCGateway(
         );
         if (!Array.isArray(data))
           throw new GatewayMessage("申请列表响应格式不符合 C-v1。");
-        let roomWarning = "";
-        try {
-          rooms = await loadRooms(current);
-        } catch (cause) {
-          rooms = [];
-          if (cause instanceof M2HttpError && cause.status === 401) throw cause;
-          roomWarning =
-            "教室读取尚未就绪或当前账号无权读取；可以查看申请，暂不能新建。";
+        // Only explicit synthetic test adapters preload rooms. Production directory
+        // reads belong to the paged picker and never block application queries.
+        if (options.loadRooms) {
+          rooms = await options.loadRooms(current.accessToken);
+          if (!sameSession(current, session.state.value))
+            throw new GatewayMessage("登录状态已变化，请重新载入。");
+          roomOwner = current;
         }
         return {
-          rooms: [...rooms],
+          rooms: sameSession(roomOwner, current) ? [...rooms] : [],
           applications: data.map((item) =>
-            toView(parseApplication(item), rooms),
+            toView(
+              parseApplication(item),
+              sameSession(roomOwner, current) ? rooms : [],
+            ),
           ),
-          canSubmit:
-            current.identity.permissions.includes("m2.submit") &&
-            rooms.length > 0,
+          canSubmit: current.identity.permissions.includes("m2.submit"),
           canReview: current.identity.permissions.includes("m2.review"),
-          roomWarning,
           pagination: { limit, offset, hasNext: data.length === limit },
         };
       } catch (cause) {
         throw safeError(cause);
       }
     },
+    roomOptions,
     async submit(draft: ApplicationDraft) {
       const current = identity();
       if (
         !current.identity.permissions.includes("m2.submit") ||
+        !sameSession(roomOwner, current) ||
         !rooms.some((room) => room.id === draft.roomId)
       )
         throw new GatewayMessage("申请权限或教室列表尚未就绪，不能提交。");

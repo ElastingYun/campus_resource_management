@@ -36,3 +36,7 @@ Thumbs.db
 
 # Isolated, pinned source checkout used only by the C-v1 CI acceptance job.
 .contract/
+
+# Browser acceptance output (synthetic screenshots only; no session traces).
+test-results/
+playwright-report/

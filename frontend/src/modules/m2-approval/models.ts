@@ -1,8 +1,20 @@
 /** Page view models, not an approved backend request/response contract. */
 export interface RoomOption {
   id: string;
+  code?: string;
   name: string;
   location: string;
+}
+export interface RoomOptionsQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export interface RoomOptionsPage {
+  items: RoomOption[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 export interface ApplicationView {
   id: string;
@@ -78,6 +90,7 @@ export interface M2Gateway {
   load(query?: WorkspaceQuery): Promise<WorkspaceData>;
   submit(draft: ApplicationDraft): Promise<ApplicationView>;
   detail?(id: string): Promise<ApplicationDetails>;
+  roomOptions?(query?: RoomOptionsQuery): Promise<RoomOptionsPage>;
   integration?(id: string): Promise<IntegrationProgress>;
   decide?(
     id: string,
