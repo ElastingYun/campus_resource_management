@@ -12,6 +12,7 @@ from app.common.audit.service import AuditService
 from app.common.auth.database import Database
 from app.common.auth.domain import Principal, ServiceError, aware, utcnow
 from app.modules.m2_approval.domain import ResourceGateway, Workflow, clean_text
+from app.modules.m2_approval.events import record_business_event
 
 PUBLIC_FIELDS = (
     "id",
@@ -122,25 +123,6 @@ class ApprovalService:
             now >= row["deadline"] if row["rules"]["deadline_inclusive"] else now > row["deadline"]
         )
 
-    def _event(self, conn, row, event_type, now):
-        conn.execute(
-            "INSERT INTO c_business_events VALUES (%s,%s,%s,%s,%s)",
-            (
-                uuid4(),
-                row["id"],
-                event_type,
-                Jsonb(
-                    {
-                        "application_id": str(row["id"]),
-                        "version": row["version"],
-                        "review_status": row["review_status"],
-                        "integration_status": row["integration_status"],
-                    }
-                ),
-                now,
-            ),
-        )
-
     def _audit(self, conn, principal, row, action, before, now, request_id):
         self.audit.record(
             conn,
@@ -238,7 +220,7 @@ class ApprovalService:
                 ),
             ).fetchone()
             self._audit(conn, principal, row, "m2.submit", None, now, request_id)
-            self._event(conn, row, "application.submitted", now)
+            record_business_event(conn, row, "application.submitted", now)
             return self._save_receipt(conn, principal, "submit", key, fingerprint, row)
 
     def get(self, principal, application_id):
@@ -411,7 +393,7 @@ class ApprovalService:
             if integration == "APPLY_PENDING":
                 self._operation(conn, row, "APPLY", now)
             self._audit(conn, principal, row, "m2." + decision.lower(), before, now, request_id)
-            self._event(conn, row, "application." + decision.lower(), now)
+            record_business_event(conn, row, "application." + decision.lower(), now)
             return self._save_receipt(conn, principal, action, key, fingerprint, row)
 
     def expire_due(self, *, limit=100):
@@ -434,7 +416,7 @@ class ApprovalService:
                     (now, original["id"]),
                 ).fetchone()
                 self._audit(conn, None, row, "m2.timeout", "REVIEWING/NONE", now, str(uuid4()))
-                self._event(conn, row, "application.timed_out", now)
+                record_business_event(conn, row, "application.timed_out", now)
                 count += 1
         return count
 
@@ -473,5 +455,5 @@ class ApprovalService:
             if has_operation:
                 self._operation(conn, row, "RELEASE", now)
             self._audit(conn, principal, row, "m2.revoke", before, now, request_id)
-            self._event(conn, row, "application.revoked", now)
+            record_business_event(conn, row, "application.revoked", now)
             return self._save_receipt(conn, principal, action, key, fingerprint, row)
