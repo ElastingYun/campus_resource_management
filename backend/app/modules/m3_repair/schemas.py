@@ -40,3 +40,25 @@ class TicketPage(BaseModel):
     items: list[TicketOut]
     limit: int
     offset: int
+
+
+class AssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    assignee_id: str = Field(min_length=1, max_length=64)
+    expected_version: int = Field(ge=0)
+
+    @field_validator("assignee_id")
+    @classmethod
+    def validate_assignee_id(cls, value: str) -> str:
+        if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("Assignee ID contains whitespace or control characters")
+        return value
+
+
+class AssignmentOut(BaseModel):
+    ticket_id: str
+    assignee_id: str
+    status: str
+    version: int
+    occurred_at: datetime

@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.database import build_engine
+from app.modules.m3_repair.assignment import assign_ticket
 from app.modules.m3_repair.contracts import TicketActor, TicketError
-from app.modules.m3_repair.schemas import TicketCreate
+from app.modules.m3_repair.schemas import AssignmentRequest, TicketCreate
 from app.modules.m3_repair.service import create_ticket
-from app.modules.m3_repair.tables import tickets
+from app.modules.m3_repair.tables import ticket_events, tickets
 
 pytestmark = [
     pytest.mark.integration,
@@ -117,4 +118,97 @@ def test_two_concurrent_submissions_create_one_ticket():
         with Session(engine) as session:
             session.execute(delete(tickets).where(tickets.c.reporter_id == actor.subject_id))
             session.commit()
+        engine.dispose()
+
+
+def test_two_concurrent_assignments_have_one_version_winner():
+    engine = build_engine(Settings(_env_file=None))
+    ticket_id = None
+    reporter = TicketActor(f"synthetic-{uuid4()}", can_create=True)
+    dispatcher = TicketActor(f"synthetic-{uuid4()}", can_assign=True)
+    key = f"assignment-{uuid4()}"
+
+    class RoomPolicy:
+        def require_reportable(self, room_id, actor):
+            assert room_id == 1 and actor.subject_id == reporter.subject_id
+
+    class CreateAudit:
+        def record_created(self, session, *, actor, ticket_id, room_id, request_id, now):
+            assert session.in_transaction() and ticket_id and room_id and request_id and now
+
+    class AssignPolicy:
+        def __init__(self):
+            self.barrier = Barrier(2)
+
+        def require_assignable(self, room_id, actor, assignee_id):
+            assert room_id == 1 and actor.subject_id == dispatcher.subject_id and assignee_id
+            self.barrier.wait(timeout=10)
+
+    class AssignAudit:
+        def record_assigned(
+            self,
+            session,
+            *,
+            actor,
+            ticket_id,
+            room_id,
+            assignee_id,
+            operation_id,
+            before_status,
+            after_status,
+            now,
+        ):
+            assert session.in_transaction() and actor.subject_id == dispatcher.subject_id
+            assert ticket_id and room_id and assignee_id and operation_id and now
+            assert (before_status, after_status) == ("REPORTED", "ASSIGNED")
+
+    try:
+        with Session(engine) as session:
+            ticket, created = create_ticket(
+                session,
+                reporter,
+                RoomPolicy(),
+                CreateAudit(),
+                TicketCreate(room_id="1", description="合成并发派单故障"),
+                key,
+            )
+            assert created
+            ticket_id = ticket.id
+
+        policy = AssignPolicy()
+        audit = AssignAudit()
+
+        def assign(index):
+            with Session(engine) as session:
+                try:
+                    result, created = assign_ticket(
+                        session,
+                        dispatcher,
+                        policy,
+                        audit,
+                        ticket.id,
+                        str(uuid4()),
+                        AssignmentRequest(assignee_id=f"repairer-{index}", expected_version=0),
+                    )
+                    return result.status, created
+                except TicketError as exc:
+                    return exc.detail["code"], False
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(assign, range(2)))
+        assert sorted(results) == [("ASSIGNED", True), ("ticket_changed", False)]
+        with Session(engine) as session:
+            row = session.execute(select(tickets).where(tickets.c.id == ticket.id)).one()
+            count = session.scalar(
+                select(func.count())
+                .select_from(ticket_events)
+                .where(ticket_events.c.ticket_id == ticket.id)
+            )
+            assert row.version == 1 and row.status == "ASSIGNED" and count == 1
+    finally:
+        if ticket_id is not None:
+            with Session(engine) as session:
+                session.execute(delete(ticket_events).where(ticket_events.c.ticket_id == ticket_id))
+                session.execute(delete(tickets).where(tickets.c.id == ticket_id))
+                session.commit()
         engine.dispose()
