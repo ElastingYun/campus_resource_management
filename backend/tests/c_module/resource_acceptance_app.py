@@ -34,12 +34,18 @@ def build():
             db_host="synthetic-fixture",
             db_password="synthetic-fixture-password",
             c_enabled=True,
-            c_config_file=Path(__file__).resolve().parents[2]
+            c_config_file=Path(os.environ["C24_TEST_POLICY_FILE"])
+            if os.environ.get("C24_TEST_POLICY_FILE")
+            else Path(__file__).resolve().parents[2]
             / "app/modules/m2_approval/examples/runtime.synthetic.json",
-            resources_service_token="synthetic-fixture-resource-token",
+            resources_service_token=os.environ.get(
+                "C24_TEST_RESOURCE_TOKEN", "synthetic-fixture-resource-token"
+            ),
         )
     )
     component = application.state.c_runtime
+    if os.environ.get("C24_TEST_C_ONLY") == "1":
+        return application
     install_resource_management(
         application,
         auth=component.auth,

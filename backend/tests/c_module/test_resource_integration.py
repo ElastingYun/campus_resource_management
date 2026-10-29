@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time as wall_time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ import psycopg
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import insert, text
+from sqlalchemy import insert, text, update
 
 from app.common.audit.service import AuditService
 from app.common.auth.resource_adapter import (
@@ -37,6 +38,7 @@ if importlib.util.find_spec("app.modules.resources") is None:
 from app.modules.resources.tables import metadata, rooms
 
 from .test_hosted_runtime import hosted
+from .test_runtime_settings import EXAMPLE
 
 BIG_ROOM = 9007199254740993
 PERMISSIONS = ResourcePermissions(
@@ -452,3 +454,191 @@ def test_real_tcp_login_resource_write_audit_and_logout(integrated, tmp_path):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+
+
+def test_two_process_approved_qualification_uses_real_b_http_without_student_admin_grant(
+    integrated,
+    tmp_path,
+):
+    s = integrated
+    for username, permissions, global_scope in (
+        ("policy-service", frozenset({PERMISSIONS.read}), True),
+        ("policy-applicant", frozenset({"m2.submit"}), False),
+    ):
+        s.component.auth.provision_user(
+            username=username,
+            password="synthetic-policy-password",
+            department_id="synthetic",
+            roles={"synthetic-" + username: permissions},
+            room_ids=frozenset(),
+            all_rooms=global_scope,
+        )
+    service_token = s.component.auth.login(
+        "policy-service",
+        "synthetic-policy-password",
+        client_key="policy-service-fixture",
+        request_id="policy-service-fixture",
+    )["access_token"]
+    # Test-only B data in the fixture's private schema; B implementation remains pinned.
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(rooms)
+            .where(rooms.c.id == 2)
+            .values(access_scope="department", department_id="other-department")
+        )
+        for identifier, scope, department, enabled in (
+            (3, "department", "synthetic", True),
+            (4, "campus", None, False),
+        ):
+            conn.execute(
+                insert(rooms).values(
+                    id=identifier,
+                    code="POLICY-" + str(identifier),
+                    name="合成资格教室",
+                    location="测试",
+                    access_scope=scope,
+                    department_id=department,
+                    open_time=time(8),
+                    close_time=time(22),
+                    enabled=enabled,
+                )
+            )
+
+    @contextmanager
+    def server(name, extra_env):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with (tmp_path / (name + ".log")).open("w") as log:
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "resource_acceptance_app:build",
+                    "--factory",
+                    "--app-dir",
+                    "tests/c_module",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                ],
+                cwd=Path(__file__).resolve().parents[2],
+                env=os.environ
+                | {
+                    "CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE": "1",
+                    "CAMPUS_C_ENABLED": "false",
+                    "C24_TEST_DB_URI": s.db.dsn,
+                }
+                | extra_env,
+                stdout=log,
+                stderr=log,
+            )
+            try:
+                with httpx.Client(
+                    base_url=f"http://127.0.0.1:{port}", trust_env=False, timeout=5
+                ) as client:
+                    deadline = wall_time.monotonic() + 15
+                    while wall_time.monotonic() < deadline:
+                        if process.poll() is not None:
+                            pytest.fail("Isolated policy HTTP service exited")
+                        try:
+                            if client.get("/health/ready").status_code == 200:
+                                break
+                        except httpx.HTTPError:
+                            pass
+                        wall_time.sleep(0.05)
+                    else:
+                        pytest.fail("Isolated policy HTTP service did not become ready")
+                    yield client, port
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+    with server("b-resources", {}) as (resources, port):
+        policy = json.loads(EXAMPLE.read_text())
+        policy["submission"]["room_access_policy"] = "campus_or_own_department"
+        policy["resources"]["base_url"] = f"http://127.0.0.1:{port}"
+        policy_path = tmp_path / "approved-policy.json"
+        policy_path.write_text(json.dumps(policy))
+        with server(
+            "c-approval",
+            {
+                "C24_TEST_C_ONLY": "1",
+                "C24_TEST_POLICY_FILE": str(policy_path),
+                "C24_TEST_RESOURCE_TOKEN": service_token,
+            },
+        ) as (approval, _):
+            session = approval.post(
+                "/api/v1/auth/sessions",
+                json={"username": "policy-applicant", "password": "synthetic-policy-password"},
+            )
+            assert session.status_code == 200
+            headers = {"Authorization": "Bearer " + session.json()["access_token"]}
+            assert resources.get("/api/v1/resources/rooms", headers=headers).status_code == 403
+            source = resources.get(
+                f"/api/v1/resources/rooms/{BIG_ROOM}",
+                headers={"Authorization": "Bearer " + service_token},
+            )
+            assert source.status_code == 200 and source.json()["department_id"] is None
+            from datetime import UTC, datetime, timedelta
+
+            start = datetime.now(UTC) + timedelta(hours=2)
+            payload = {
+                "room_id": str(BIG_ROOM),
+                "starts_at": start.isoformat(),
+                "ends_at": (start + timedelta(hours=1)).isoformat(),
+                "purpose": "合成已批准政策",
+            }
+            first = approval.post(
+                "/api/v1/m2/applications",
+                headers=headers | {"Idempotency-Key": "campus-policy"},
+                json=payload,
+            )
+            assert first.status_code == 201 and first.json()["effective"] is False
+            own = approval.post(
+                "/api/v1/m2/applications",
+                headers=headers | {"Idempotency-Key": "own-department-policy"},
+                json=payload | {"room_id": "3"},
+            )
+            assert own.status_code == 201 and own.json()["id"] != first.json()["id"]
+            for identifier, expected in (("2", 403), ("4", 409), ("999", 404)):
+                response = approval.post(
+                    "/api/v1/m2/applications",
+                    headers=headers | {"Idempotency-Key": "denied-" + identifier},
+                    json=payload | {"room_id": identifier},
+                )
+                assert response.status_code == expected
+            with s.engine.begin() as conn:
+                conn.execute(update(rooms).where(rooms.c.id == BIG_ROOM).values(enabled=False))
+            replay = approval.post(
+                "/api/v1/m2/applications",
+                headers=headers | {"Idempotency-Key": "campus-policy"},
+                json=payload,
+            )
+            assert replay.status_code == 201 and replay.json()["id"] == first.json()["id"]
+            assert (
+                approval.post(
+                    "/api/v1/m2/applications",
+                    headers=headers | {"Idempotency-Key": "after-disable"},
+                    json=payload,
+                ).status_code
+                == 409
+            )
+            principal = s.component.auth.authenticate(service_token)
+            s.component.auth.logout(service_token, principal, "synthetic-service-logout")
+            unavailable = approval.post(
+                "/api/v1/m2/applications",
+                headers=headers | {"Idempotency-Key": "unavailable-resource-service"},
+                json=payload | {"room_id": "3"},
+            )
+            assert unavailable.status_code == 503
+            assert unavailable.json()["error"]["code"] == "RESOURCE_UNAVAILABLE"
+    with s.db.transaction() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM c_applications").fetchone()["n"] == 2
+        assert conn.execute("SELECT count(*) AS n FROM c_m1_operations").fetchone()["n"] == 0
