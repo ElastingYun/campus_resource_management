@@ -1,9 +1,8 @@
+import { object, parseReceipt } from "./receipt";
 import {
   BookingError,
   isIdentifier,
-  isInstant,
   matchesIntent,
-  reservationLabels,
   validateSelection,
 } from "./models";
 import type {
@@ -35,63 +34,6 @@ const rejected: Record<string, [number, string]> = {
   AUTHENTICATION_REQUIRED: [401, "请先登录后操作。"],
   FORBIDDEN: [403, "当前账号没有预约权限。"],
 };
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("invalid payload");
-  return value as Record<string, unknown>;
-}
-function identifier(value: unknown): string {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
-    return String(value);
-  if (isIdentifier(value)) return value;
-  throw new Error("invalid identifier");
-}
-function text(value: unknown): string {
-  if (typeof value !== "string" || !value.trim())
-    throw new Error("invalid text");
-  return value;
-}
-function instant(value: unknown): string {
-  if (!isInstant(value)) throw new Error("invalid timestamp");
-  return value;
-}
-function nullableTime(value: unknown): string | null {
-  return value === null ? null : instant(value);
-}
-function parseReceipt(
-  value: unknown,
-  intent: BookingIntent,
-): ReservationReceipt {
-  const data = object(value);
-  const status = text(data.status);
-  if (!Object.hasOwn(reservationLabels, status))
-    throw new Error("invalid status");
-  const receipt: ReservationReceipt = {
-    id: identifier(data.id),
-    seatId: identifier(data.seat_id),
-    roomId: identifier(data.room_id),
-    seatCode: text(data.seat_code),
-    roomCode: text(data.room_code),
-    roomName: text(data.room_name),
-    startAt: instant(data.start_at),
-    endAt: instant(data.end_at),
-    status: status as ReservationReceipt["status"],
-    checkedInAt: nullableTime(data.checked_in_at),
-    cancelledAt: nullableTime(data.cancelled_at),
-    cancelReason: data.cancel_reason === null ? null : text(data.cancel_reason),
-    createdAt: instant(data.created_at),
-  };
-  if (
-    !matchesIntent(receipt, intent) ||
-    (receipt.status === "booked" &&
-      (receipt.checkedInAt !== null || receipt.cancelledAt !== null)) ||
-    (receipt.status === "checked_in" && receipt.checkedInAt === null) ||
-    (["cancelled", "no_show"].includes(receipt.status) &&
-      receipt.cancelledAt === null)
-  )
-    throw new Error("mismatched receipt");
-  return receipt;
-}
 export function createHttpBookingGateway(options: {
   getSession: () => { subjectId: string; accessToken: string } | null;
   request?: typeof fetch;
@@ -201,7 +143,9 @@ export function createHttpBookingGateway(options: {
         !response.headers.get("Content-Type")?.includes("application/json")
       )
         throw new Error("invalid response");
-      const receipt = parseReceipt(await response.json(), intent);
+      const receipt = parseReceipt(await response.json());
+      if (!matchesIntent(receipt, intent))
+        throw new Error("mismatched receipt");
       if (getSession()?.subjectId !== intent.actorId)
         throw new BookingError(
           "账号已变化，请切回原账号核对预约。",

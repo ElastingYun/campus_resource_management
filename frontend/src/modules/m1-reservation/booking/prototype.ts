@@ -5,12 +5,13 @@ import type {
   ReservationReceipt,
 } from "./models";
 
-export function createPrototypeBookingGateway(): BookingGateway {
+export function createPrototypeBookingGateway(
+  receipts = new Map<string, ReservationReceipt>(),
+): BookingGateway {
   const requests = new Map<
     string,
     { fingerprint: string; receipt: ReservationReceipt }
   >();
-  const receipts = new Map<string, ReservationReceipt>();
   const fingerprint = (intent: BookingIntent) =>
     JSON.stringify([
       intent.actorId,
