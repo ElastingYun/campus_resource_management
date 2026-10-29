@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.health import router
 from app.config import Settings
 from app.database import build_engine
+from app.modules.m1_reservation import router as m1_router
 from app.modules.m2_approval.runtime import ComponentRuntime
 from app.modules.m2_approval.settings import ComponentConfiguration
 
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application = FastAPI(title=title, lifespan=lifespan)
     application.include_router(router)
+    m1_router.register(application)
     if configuration.c_enabled:
         component = ComponentRuntime(
             application,
