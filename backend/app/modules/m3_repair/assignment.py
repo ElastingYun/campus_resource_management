@@ -33,7 +33,11 @@ def _event(session: Session, ticket_id: str, operation_id: str):
 
 
 def _replay(row, actor: TicketActor, fingerprint: str) -> AssignmentOut:
-    if row.actor_id != actor.subject_id or row.request_fingerprint != fingerprint:
+    if (
+        row.action != "assign"
+        or row.actor_id != actor.subject_id
+        or row.request_fingerprint != fingerprint
+    ):
         raise TicketError(409, "operation_id_reused", "操作标识已用于其他派单请求")
     return _out(row)
 

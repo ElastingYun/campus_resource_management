@@ -80,6 +80,46 @@ class AssignmentAudit:
             raise RuntimeError("synthetic audit failure")
 
 
+class RestrictionConfirmation:
+    def __init__(self):
+        self.active = True
+        self.calls = 0
+
+    def require_active(self, ticket_id, room_id):
+        self.calls += 1
+        assert ticket_id and room_id == 1
+        if not self.active:
+            raise TicketError(503, "restriction_unconfirmed", "尚未确认整室下架")
+
+
+class WorkStartAudit:
+    def __init__(self):
+        self.fail_after_write = False
+
+    def record_started(
+        self,
+        session,
+        *,
+        actor,
+        ticket_id,
+        room_id,
+        operation_id,
+        before_status,
+        after_status,
+        now,
+    ):
+        assert session.in_transaction()
+        assert room_id == "1" and actor.subject_id and now.tzinfo is not None
+        assert (before_status, after_status) == ("ASSIGNED", "REPAIRING")
+        session.execute(
+            insert(audit_entries).values(
+                event_id=operation_id, ticket_id=ticket_id, actor_id=actor.subject_id
+            )
+        )
+        if self.fail_after_write:
+            raise RuntimeError("synthetic audit failure")
+
+
 @pytest.fixture
 def assignment_client():
     engine = create_engine(
@@ -109,6 +149,8 @@ def assignment_client():
         "actor": TicketActor("dispatcher-1", can_assign=True),
         "audit": AssignmentAudit(),
         "report_audit": ReportAudit(),
+        "restriction": RestrictionConfirmation(),
+        "work_start_audit": WorkStartAudit(),
     }
     policy = AssignmentPolicy()
     app = FastAPI()
@@ -120,6 +162,8 @@ def assignment_client():
             audit_dependency=lambda: holder["report_audit"],
             assignment_policy_dependency=lambda: policy,
             assignment_audit_dependency=lambda: holder["audit"],
+            restriction_confirmation_dependency=lambda: holder["restriction"],
+            work_start_audit_dependency=lambda: holder["work_start_audit"],
         )
     )
     with TestClient(app) as client:
@@ -136,6 +180,15 @@ def assign(client, ticket_id, *, operation_id=None, assignee="repairer-1", versi
     )
 
 
+def start_work(client, ticket_id, *, operation_id=None, version=1):
+    operation_id = operation_id or str(uuid4())
+    return client.post(
+        f"/api/v1/m3/tickets/{ticket_id}/work-starts",
+        headers={"Operation-Id": operation_id},
+        json={"expected_version": version},
+    )
+
+
 def counts(engine):
     with Session(engine) as session:
         return (
@@ -144,7 +197,7 @@ def counts(engine):
         )
 
 
-def test_first_review_report_read_and_assign_http_flow(assignment_client):
+def test_first_review_report_read_assign_and_start_http_flow(assignment_client):
     client, holder, _, engine, _ = assignment_client
     holder["actor"] = TicketActor("reporter-2", can_create=True, can_read_own=True)
     created = client.post(
@@ -165,9 +218,16 @@ def test_first_review_report_read_and_assign_http_flow(assignment_client):
     assert assigned.json()["version"] == 1
     assert counts(engine) == (1, 2)
 
+    holder["actor"] = TicketActor("repairer-1", can_start_repair=True)
+    started = start_work(client, ticket_id)
+    assert started.status_code == 201
+    assert started.json()["status"] == "REPAIRING"
+    assert started.json()["version"] == 2
+    assert counts(engine) == (2, 3)
+
     holder["actor"] = TicketActor("reporter-2", can_read_own=True)
     after = client.get(f"/api/v1/m3/tickets/{ticket_id}")
-    assert after.status_code == 200 and after.json()["status"] == "ASSIGNED"
+    assert after.status_code == 200 and after.json()["status"] == "REPAIRING"
     holder["actor"] = TicketActor("other-reporter", can_read_own=True)
     assert client.get(f"/api/v1/m3/tickets/{ticket_id}").status_code == 404
 
@@ -194,6 +254,66 @@ def test_assignment_replay_and_version_conflict(assignment_client):
     with Session(engine) as session:
         row = session.execute(select(tickets).where(tickets.c.id == ticket_id)).one()
         assert (row.status, row.assignee_id, row.version) == ("ASSIGNED", "repairer-1", 1)
+
+
+def test_work_start_requires_assignee_and_confirmed_restriction(assignment_client):
+    client, holder, _, engine, ticket_id = assignment_client
+    assert assign(client, ticket_id).status_code == 201
+
+    holder["actor"] = TicketActor("other-repairer", can_start_repair=True)
+    assert start_work(client, ticket_id).status_code == 403
+    holder["actor"] = TicketActor("repairer-1")
+    assert start_work(client, ticket_id).status_code == 403
+    assert holder["restriction"].calls == 0
+
+    holder["actor"] = TicketActor("repairer-1", can_start_repair=True)
+    holder["restriction"].active = False
+    blocked = start_work(client, ticket_id)
+    assert blocked.status_code == 503
+    assert blocked.json()["detail"]["code"] == "restriction_unconfirmed"
+    assert counts(engine) == (1, 1)
+    with Session(engine) as session:
+        row = session.execute(select(tickets).where(tickets.c.id == ticket_id)).one()
+        assert (row.status, row.version) == ("ASSIGNED", 1)
+
+    holder["restriction"].active = True
+    assert start_work(client, ticket_id).status_code == 201
+    assert counts(engine) == (2, 2)
+
+
+def test_work_start_replay_conflicts_and_audit_rollback(assignment_client):
+    client, holder, _, engine, ticket_id = assignment_client
+    assignment_id = str(uuid4())
+    assert assign(client, ticket_id, operation_id=assignment_id).status_code == 201
+    holder["actor"] = TicketActor("repairer-1", can_start_repair=True)
+    reused_assignment_id = start_work(client, ticket_id, operation_id=assignment_id)
+    assert reused_assignment_id.status_code == 409
+    assert reused_assignment_id.json()["detail"]["code"] == "operation_id_reused"
+
+    start_id = str(uuid4())
+    holder["work_start_audit"].fail_after_write = True
+    failed = start_work(client, ticket_id, operation_id=start_id)
+    assert failed.status_code == 503
+    assert failed.json()["detail"]["code"] == "audit_unavailable"
+    assert counts(engine) == (1, 1)
+    with Session(engine) as session:
+        row = session.execute(select(tickets).where(tickets.c.id == ticket_id)).one()
+        assert (row.status, row.version) == ("ASSIGNED", 1)
+
+    holder["work_start_audit"].fail_after_write = False
+    first = start_work(client, ticket_id, operation_id=start_id)
+    assert first.status_code == 201
+    replay = start_work(client, ticket_id, operation_id=start_id)
+    assert replay.status_code == 200 and replay.json() == first.json()
+    assert holder["restriction"].calls == 2
+    assert start_work(client, ticket_id, operation_id=start_id, version=2).status_code == 409
+    assert start_work(client, ticket_id).status_code == 409
+    assert counts(engine) == (2, 2)
+
+    holder["actor"] = TicketActor("dispatcher-1", can_assign=True)
+    reused_start_id = assign(client, ticket_id, operation_id=start_id)
+    assert reused_start_id.status_code == 409
+    assert reused_start_id.json()["detail"]["code"] == "operation_id_reused"
 
 
 def test_audit_failure_rolls_back_and_operation_can_retry(assignment_client):
@@ -246,4 +366,22 @@ def test_assignment_default_policy_is_closed():
         response = assign(client, str(uuid4()))
         assert response.status_code == 503
         assert response.json()["detail"]["code"] == "assignment_policy_unconfigured"
+    engine.dispose()
+
+
+def test_work_start_default_restriction_is_closed():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    tickets.create(engine)
+    ticket_events.create(engine)
+    app = FastAPI()
+    app.state.engine = engine
+    app.include_router(
+        create_router(actor_dependency=lambda: TicketActor("repairer", can_start_repair=True))
+    )
+    with TestClient(app) as client:
+        response = start_work(client, str(uuid4()))
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "restriction_confirmation_unconfigured"
     engine.dispose()
