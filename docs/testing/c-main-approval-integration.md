@@ -6,6 +6,7 @@
 
 C 基础原提交 `a7cfdf000772be04fb72a36472bcbed9e3036c08`，同步的 main 为
 `1e663e92d582241efcab764cd3ae60011563a092`，已包含 D 完整前端、B 遗漏增量及 E 创建/派单/开工基础。
+准备过程中远端正常合入 #34，形成 `f3d8ecf`；首次推送被 Git 正常拒绝后，保留双方历史合流，未强推。
 
 三处文字冲突均由负责人逐项确认后处理：
 
@@ -27,10 +28,15 @@ D 计划文档的独立冲突已在 D 链按负责人方案处理，再随 #15 �
 跨 owner 的额外改动只有 B 验收启动器的 import 分组：C 模块真正存在后 Ruff 将其识别为
 first-party，原排序不再通过；只移动 sqlalchemy 导入位置，不改启动器逻辑。请 B/D 复核。
 
+#34 的 C/B 准备器同步适配“B 已真实进入主线”：若本树已安装 B，验证其文件集合和字节
+均与当前提交一致，直接投影、保存实际提交与 SHA256，不用旧外部分支覆盖新版实现。
+尚未安装 B 时继续原固定版本校验和投影；公开端口兼容性及真实事务仍由原测试完整执行。
+这样新组合验证的是实际交付的 B，不是为了通过而还原旧版本。
+
 ## 本机实际结果
 
-- `ruff check .`：通过；`ruff format --check .`：110 文件通过。
-- `python -m pytest -q -m 'not integration'`：**130 passed, 160 deselected, 1 warning**。
+- `ruff check .`：通过；`ruff format --check .`：115 文件通过。
+- `python -m pytest -q -m 'not integration'`：**154 passed, 169 deselected, 1 warning**（保留并发合入的 #34 后重新运行）。
 - `python -m alembic heads`：仅 `0008_merge_c_m3 (head)`。
 - `python -m compileall -q backend/app backend/alembic`：通过。
 - 本机 PostgreSQL 16 缺 M1 既有 `btree_gist`，完整迁移/数据库矩阵本机 **NOT RUN**。
@@ -41,6 +47,7 @@ first-party，原排序不再通过；只移动 sqlalchemy 导入位置，不改
 
 ## 剩余边界
 
-C #34/#36/#39/#41/#55/#57/#59 仍是后续依赖，基础合流不等于它们已进入 main。
+C #34 已进入本基础分支；其他 C 增量的真实传播另按当前 Git 祖先与 PR 目标检查，
+基础合流不等于后续增量已进入 main。
 正式启用应一并包含登录签发和角色/范围一致性修复；本次不改变 C 默认关闭的配置。
 真实 M1 身份/原子冲突/终态、M3 资格和实际通知仍分别跟踪，不能用合并或本地事件替代联调验收。
