@@ -8,8 +8,9 @@ from app.common.auth.domain import ServiceError
 @dataclass(frozen=True)
 class Room:
     id: str
-    department_id: str
+    department_id: str | None
     enabled: bool
+    access_scope: str | None = None
 
 
 class ResourceGateway(Protocol):

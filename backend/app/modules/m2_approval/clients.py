@@ -6,6 +6,7 @@ import httpx
 
 from app.common.auth.domain import ServiceError
 from app.modules.m2_approval.domain import Room
+from app.modules.m2_approval.room_policy import validate_access_metadata
 
 
 class Outcome(StrEnum):
@@ -107,8 +108,14 @@ class HttpResourceGateway:
         room_path: str,
         service_token: str,
         timeout_seconds: float,
+        require_access_scope: bool = False,
     ):
-        if "{room_id}" not in room_path or not service_token or timeout_seconds <= 0:
+        if (
+            "{room_id}" not in room_path
+            or not service_token
+            or timeout_seconds <= 0
+            or type(require_access_scope) is not bool
+        ):
             raise ValueError("Explicit resource path, credentials and timeout are required")
         self.client, self.path, self._token, self.timeout = (
             client,
@@ -116,6 +123,7 @@ class HttpResourceGateway:
             service_token,
             timeout_seconds,
         )
+        self.require_access_scope = require_access_scope
 
     def get_room(self, room_id):
         try:
@@ -133,10 +141,18 @@ class HttpResourceGateway:
             if (
                 not isinstance(body, dict)
                 or body.get("id") != room_id
-                or not isinstance(body.get("department_id"), str)
                 or type(body.get("enabled")) is not bool
             ):
                 raise ValueError("Invalid resource response")
-            return Room(room_id, body["department_id"], body["enabled"])
+            room = Room(
+                room_id, body.get("department_id"), body["enabled"], body.get("access_scope")
+            )
+            if self.require_access_scope:
+                if "department_id" not in body:
+                    raise ValueError("Resource department field is missing")
+                validate_access_metadata(room)
+            elif not isinstance(room.department_id, str):
+                raise ValueError("Invalid legacy resource response")
+            return room
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise ServiceError(503, "RESOURCE_UNAVAILABLE", "暂时无法确认教室信息") from exc
