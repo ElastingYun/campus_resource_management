@@ -1,5 +1,7 @@
-from dataclasses import replace
+import json
+from dataclasses import FrozenInstanceError, replace
 from datetime import time
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -14,7 +16,7 @@ from app.modules.resources.tables import metadata, rooms, seats
 
 
 @pytest.fixture
-def resource_api():
+def resource_api(audit_store):
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -24,7 +26,12 @@ def resource_api():
         connection.execute("PRAGMA foreign_keys=ON")
 
     metadata.create_all(engine)  # Isolated unit fixture, never application initialization.
-    state = {"actor": ResourceActor("test-admin", True, True, True, None), "events": []}
+    store = audit_store(engine)
+    state = {
+        "actor": ResourceActor("test-admin", True, True, True, None),
+        "events": [],
+        "audit_store": store,
+    }
 
     def actor():
         return state["actor"]
@@ -34,11 +41,21 @@ def resource_api():
             yield value
 
     def audit(value, mutation):
+        store.write(value, mutation)
         state["events"].append(mutation)
+        if state.get("audit_constraint_failure"):
+            row = value.execute(select(store.table)).mappings().first()
+            value.execute(insert(store.table).values(**dict(row)))  # Real duplicate primary key.
         if state.get("audit_failure"):
             raise RuntimeError("synthetic-private-audit-error")
 
     application = FastAPI()
+
+    @application.middleware("http")
+    async def trusted_context(request, call_next):
+        request.state.request_id = state.get("request_id", str(uuid4()))
+        return await call_next(request)
+
     application.include_router(
         create_resources_router(
             actor_dependency=actor,
@@ -307,6 +324,7 @@ def test_missing_creation_policy_and_audit_refuse_writes(resource_api):
                 actor_dependency=lambda: state["actor"],
                 session_dependency=session,
                 audit_sink=sink,
+                request_id_dependency=lambda: str(uuid4()),  # Explicit trusted test seam.
             )
         )
         with TestClient(application) as client:
@@ -343,3 +361,241 @@ def test_invalid_seat_fields_do_not_write(resource_api):
         )
     with Session(engine) as session:
         assert session.execute(select(seats)).first() is None
+
+
+def test_create_audit_uses_trusted_context_and_persisted_whitelist(resource_api):
+    client, state, _ = resource_api
+    trusted_id = str(uuid4())
+    state["request_id"] = trusted_id
+    response = client.post(
+        "/api/v1/resources/rooms",
+        json={"code": "  AUDIT  ", "name": "  示例  ", "location": "  一层  "},
+        headers={"X-Request-ID": str(uuid4()), "Authorization": "Bearer synthetic-private-token"},
+    )
+    assert response.status_code == 201
+    mutation = state["events"][-1]
+    assert mutation.request_id == trusted_id
+    assert mutation.actor_id == state["actor"].subject
+    assert mutation.resource_id == mutation.room_id == int(response.json()["id"])
+    assert mutation.before is None
+    assert json.loads(mutation.after) == {
+        "code": "AUDIT",
+        "name": "示例",
+        "location": "一层",
+        "access_scope": "campus",
+        "department_id": None,
+        "open_time": "08:00:00",
+        "close_time": "22:00:00",
+        "enabled": True,
+    }
+    assert "synthetic-private-token" not in repr(mutation)
+    assert state["audit_store"].read()[0]["after"] == mutation.after
+    with pytest.raises(FrozenInstanceError):
+        mutation.room_id = 999
+
+
+def test_update_audit_contains_only_actual_changed_fields(resource_api):
+    client, state, _ = resource_api
+    room = new_room(client)
+    response = client.patch(
+        f"/api/v1/resources/rooms/{room['id']}",
+        json={"code": room["code"], "name": "  审计修改  ", "expected_revision": room["revision"]},
+    )
+    assert response.status_code == 200
+    mutation = state["events"][-1]
+    assert json.loads(mutation.before) == {"name": room["name"]}
+    assert json.loads(mutation.after) == {"name": response.json()["name"]}
+    assert mutation.room_id == int(room["id"])
+    assert "revision" not in mutation.after and "updated_at" not in mutation.after
+
+
+def test_seat_audit_has_its_parent_room_not_the_seat_identifier(resource_api):
+    client, state, _ = resource_api
+    new_room(client)
+    room = new_room(client, "SECOND")
+    response = client.post(
+        f"/api/v1/resources/rooms/{room['id']}/seats", json={"code": "01", "outlet_type": "fixed"}
+    )
+    assert response.status_code == 201
+    seat = response.json()
+    mutation = state["events"][-1]
+    assert mutation.resource_id == int(seat["id"])
+    assert mutation.room_id == int(room["id"]) != mutation.resource_id
+    assert mutation.before is None
+    assert json.loads(mutation.after) == {"code": "01", "outlet_type": "fixed", "enabled": True}
+    edited = client.patch(
+        f"/api/v1/resources/seats/{seat['id']}",
+        json={"outlet_type": "rail", "expected_revision": seat["revision"]},
+    )
+    assert edited.status_code == 200
+    mutation = state["events"][-1]
+    assert mutation.room_id == int(room["id"])
+    assert json.loads(mutation.before) == {"outlet_type": "fixed"}
+    assert json.loads(mutation.after) == {"outlet_type": "rail"}
+
+
+def test_noop_update_does_not_invent_a_field_change(resource_api):
+    client, state, _ = resource_api
+    room = new_room(client)
+    response = client.patch(
+        f"/api/v1/resources/rooms/{room['id']}",
+        json={"name": room["name"], "expected_revision": room["revision"]},
+    )
+    assert response.status_code == 200
+    assert state["events"][-1].before == state["events"][-1].after == "{}"
+
+
+@pytest.mark.parametrize("request_id", [None, "", "not-a-uuid", "x" * 129, 42])
+def test_untrusted_or_missing_context_refuses_writes_but_not_reads(resource_api, request_id):
+    client, state, _ = resource_api
+    room = new_room(client)
+    committed = state["audit_store"].read()
+    state["request_id"] = request_id
+    assert client.get("/api/v1/resources/rooms").status_code == 200
+    response = client.patch(
+        f"/api/v1/resources/rooms/{room['id']}",
+        json={"name": "不得写入", "expected_revision": room["revision"]},
+        headers={"X-Request-ID": str(uuid4())},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "audit_context_unconfigured"
+    assert client.get(f"/api/v1/resources/rooms/{room['id']}").json()["name"] == room["name"]
+    assert state["audit_store"].read() == committed
+
+
+def test_host_can_explicitly_inject_its_trusted_context_dependency(resource_api):
+    _, state, engine = resource_api
+    trusted_id = str(uuid4())
+
+    def session():
+        with Session(engine) as value:
+            yield value
+
+    for dependency, expected in (({}, 503), ({"request_id_dependency": lambda: trusted_id}, 201)):
+        application = FastAPI()
+        application.include_router(
+            create_resources_router(
+                actor_dependency=lambda: state["actor"],
+                session_dependency=session,
+                new_room_settings=NewRoomSettings(time(8), time(22), "campus", True),
+                audit_sink=state["audit_store"].write,
+                **dependency,
+            )
+        )
+        with TestClient(application) as client:
+            response = client.post(
+                "/api/v1/resources/rooms",
+                json={"code": "INJECT", "name": "N", "location": "L"},
+                headers={"X-Request-ID": str(uuid4())},
+            )
+            assert response.status_code == expected
+    assert state["audit_store"].read()[-1]["request_id"] == trusted_id
+
+
+@pytest.mark.parametrize("operation", ["room.create", "seat.create", "room.update", "seat.update"])
+def test_each_resource_and_audit_write_roll_back_together(resource_api, operation):
+    client, state, engine = resource_api
+    room = new_room(client)
+    seat = client.post(
+        f"/api/v1/resources/rooms/{room['id']}/seats", json={"code": "01", "outlet_type": "fixed"}
+    ).json()
+
+    def persisted():
+        with Session(engine) as session:
+            return [list(session.execute(select(table)).all()) for table in (rooms, seats)]
+
+    before = persisted()
+    committed = state["audit_store"].read()
+    state["audit_failure"] = True  # The sink inserts its row, then raises before commit.
+    requests = {
+        "room.create": (
+            "POST",
+            "/api/v1/resources/rooms",
+            {"code": "FAIL", "name": "N", "location": "L"},
+        ),
+        "seat.create": (
+            "POST",
+            f"/api/v1/resources/rooms/{room['id']}/seats",
+            {"code": "02", "outlet_type": "rail"},
+        ),
+        "room.update": (
+            "PATCH",
+            f"/api/v1/resources/rooms/{room['id']}",
+            {"name": "FAIL", "expected_revision": room["revision"]},
+        ),
+        "seat.update": (
+            "PATCH",
+            f"/api/v1/resources/seats/{seat['id']}",
+            {"outlet_type": "rail", "expected_revision": seat["revision"]},
+        ),
+    }
+    method, endpoint, payload = requests[operation]
+    response = client.request(method, endpoint, json=payload)
+    assert response.status_code == 503
+    assert "synthetic-private" not in response.text
+    assert persisted() == before
+    assert state["audit_store"].read() == committed
+
+
+def test_denied_stale_and_duplicate_writes_do_not_emit_success_audits(resource_api):
+    client, state, _ = resource_api
+    room = new_room(client)
+    endpoint = f"/api/v1/resources/rooms/{room['id']}"
+    edited = client.patch(endpoint, json={"name": "first", "expected_revision": room["revision"]})
+    assert edited.status_code == 200
+    committed = state["audit_store"].read()
+    assert (
+        client.patch(
+            endpoint, json={"name": "stale", "expected_revision": room["revision"]}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            "/api/v1/resources/rooms", json={"code": room["code"], "name": "N", "location": "L"}
+        ).status_code
+        == 409
+    )
+    state["actor"] = ResourceActor("outside-scope", True, True, False, frozenset())
+    assert (
+        client.patch(
+            endpoint, json={"name": "denied", "expected_revision": edited.json()["revision"]}
+        ).status_code
+        == 404
+    )
+    assert state["audit_store"].read() == committed
+
+
+def test_audit_keeps_bigint_identifiers_lossless(resource_api):
+    client, state, engine = resource_api
+    new_room(client)
+    identifier = 9007199254740993
+    with engine.begin() as connection:
+        source = dict(connection.execute(select(rooms)).mappings().one())
+        connection.execute(
+            insert(rooms).values(**{**source, "id": identifier, "code": "BIG-AUDIT"})
+        )
+    current = client.get(f"/api/v1/resources/rooms/{identifier}").json()
+    response = client.patch(
+        f"/api/v1/resources/rooms/{identifier}",
+        json={"name": "大整数", "expected_revision": current["revision"]},
+    )
+    assert response.status_code == 200
+    assert state["events"][-1].resource_id == state["events"][-1].room_id == identifier
+    record = state["audit_store"].read()[-1]
+    assert record["resource_id"] == record["room_id"] == "9007199254740993"
+
+
+def test_audit_constraint_error_is_not_reported_as_duplicate_resource(resource_api):
+    client, state, _ = resource_api
+    room = new_room(client)
+    committed = state["audit_store"].read()
+    state["audit_constraint_failure"] = True
+    endpoint = f"/api/v1/resources/rooms/{room['id']}"
+    response = client.patch(
+        endpoint, json={"name": "不得保留", "expected_revision": room["revision"]}
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "audit_unavailable"
+    assert client.get(endpoint).json() == room
+    assert state["audit_store"].read() == committed
