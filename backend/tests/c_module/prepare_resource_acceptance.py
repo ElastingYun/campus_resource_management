@@ -34,7 +34,7 @@ def prepare(source: Path, output: Path) -> None:
         .split("\0")
     )
     for name in names:
-        if not name.startswith(("backend/", "docs/")):
+        if not name.startswith(("backend/", "docs/", "database/")):
             continue
         path = root / name
         if not path.is_file() or path.is_symlink() or path.name == ".env":
