@@ -407,6 +407,8 @@ def install(
         return jsonable_encoder(audit.list_events(principal, limit=limit, offset=offset))
 
     app.include_router(router)
+    app.state.c_auth = auth
+    app.state.c_audit = audit
 
 
 def create_app(
