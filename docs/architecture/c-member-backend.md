@@ -93,6 +93,7 @@ CAMPUS_M1_SERVICE_TOKEN=<配置 M1 时提供>
 
 完整的字段、权限、状态、错误及合成示例见 [C-v1 前端契约](c-v1-frontend-contract.md) 和 [OpenAPI](c-v1-openapi.json)。
 业务统一前缀 `/api/v1`；Vite 与 Nginx 的 `/api` 代理转发到后端。登录后使用 Bearer 会话，前端通过 actions 查询当前允许的决定/撤销动作，写入仍重新授权与校验版本。
+认证主体的启用、院系、资源范围与角色权限使用同一SQL语句快照，防止并发授权变更拼接旧范围/新权限；[C-56真实并发验证](../testing/c56-principal-snapshot.md)记录复现、修复与负对照。整合旧C分支时须纳入该修复，不能只凭旧CI成功判断身份一致性已覆盖。
 列表为带 limit/offset 的数组；详情有 step_index、step_count、审批与集成两类状态及 effective。输入错误不回显凭据或完整请求体。
 C 所有申请写入都要求 Idempotency-Key；同键同内容返回首次结果，最新状态通过 GET 查询。同键不同内容、旧版本或非法状态返回 409。
 主数据静态启用由 B 提供；最终动态占用由 M1 原子判断。C 不直接访问其他模块私有表。
