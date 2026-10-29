@@ -91,6 +91,7 @@ export async function requestJson(
       signal: controller.signal,
       credentials: "same-origin",
       redirect: "error",
+      cache: "no-store",
     });
     if (!response.ok) {
       const uncertain =

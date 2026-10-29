@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import M2IntegrationProgress from "./M2IntegrationProgress.vue";
 import { GatewayMessage } from "./models";
 import type {
   ApplicationDetails,
@@ -502,6 +503,11 @@ onMounted(reload);
               </dl>
               <p v-if="detailLoading" role="status">正在核对允许操作与历史…</p>
               <p v-if="detailError" role="alert">{{ detailError }}</p>
+              <M2IntegrationProgress
+                v-if="detail && live && gateway.integration"
+                :application="detail"
+                :load-progress="gateway.integration"
+              />
               <section v-if="detail && live" aria-label="服务端允许操作">
                 <label
                   v-if="

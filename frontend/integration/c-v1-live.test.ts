@@ -99,6 +99,12 @@ test.skipIf(!origin)(
     ).toHaveLength(1);
     const studentDetail = await gateway.detail!(record.id);
     expect(studentDetail.allowedActions).toEqual([]);
+    const beforeApproval = await gateway.integration!(record.id);
+    expect(beforeApproval.applicationId).toBe(record.id);
+    expect(beforeApproval.version).toBe(studentDetail.version);
+    expect(beforeApproval.generation).toBe(0);
+    expect(beforeApproval.operations).toEqual([]);
+    expect(beforeApproval.effective).toBe(false);
     await expect(
       gateway.decide!(
         record.id,
@@ -127,12 +133,37 @@ test.skipIf(!origin)(
     expect(final.effective).toBe(false);
     expect(final.integrationLabel).toBe("正在确认占用");
     expect(final.history).toHaveLength(2);
+    const progress = await gateway.integration!(record.id);
+    expect(progress.version).toBe(final.version);
+    expect(progress.integrationStatus).toBe("APPLY_PENDING");
+    expect(progress.generation).toBe(1);
+    expect(progress.effective).toBe(false);
+    expect(progress.operations).toHaveLength(1);
+    expect(progress.operations[0]).toMatchObject({
+      generation: 1,
+      kind: "APPLY",
+      state: "PENDING",
+      attempts: 0,
+      errorCode: null,
+    });
+    expect(await gateway.integration!(record.id)).toEqual(progress);
+    const anonymousProgress = await nativeFetch(
+      new URL(`/api/v1/m2/applications/${record.id}/integration`, origin),
+    );
+    expect(anonymousProgress.status).toBe(401);
     const oldToken = student.state.value!.accessToken;
     await student.logout();
     const revoked = await nativeFetch(new URL("/api/v1/auth/me", origin), {
       headers: { Authorization: `Bearer ${oldToken}` },
     });
     expect(revoked.status).toBe(401);
+    const revokedProgress = await nativeFetch(
+      new URL(`/api/v1/m2/applications/${record.id}/integration`, origin),
+      {
+        headers: { Authorization: `Bearer ${oldToken}` },
+      },
+    );
+    expect(revokedProgress.status).toBe(401);
     await student.login("m2-live-student", password);
     const reloaded = await createCGateway(student).load();
     expect(

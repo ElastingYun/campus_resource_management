@@ -13,7 +13,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != "Bearer " + os.environ["CAMPUS_RESOURCES_SERVICE_TOKEN"]:
             self.send_error(403)
             return
-        room = {"id": "1", "name": "Synthetic C reference room", "location": "CI only", "department_id": "synthetic-department", "enabled": True}
+        room = {"id": "1", "name": "Synthetic C reference room", "location": "CI only", "access_scope": "campus", "department_id": None, "enabled": True}
         path = urlparse(self.path).path
         if path == "/api/v1/resources/rooms/1":
             value = room

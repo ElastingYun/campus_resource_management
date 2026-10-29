@@ -16,6 +16,7 @@ export interface ApplicationView {
   note: string;
   reviewLabel?: string;
   integrationLabel?: string;
+  integrationStatus?: string;
   effective?: boolean;
   stepLabel?: string;
   version?: number;
@@ -38,6 +39,27 @@ export interface ApplicationDetails extends ApplicationView {
     occurredAt: string;
   }[];
 }
+export interface IntegrationProgress {
+  applicationId: string;
+  version: number;
+  generation: number;
+  integrationStatus: string;
+  effective: boolean;
+  operations: {
+    id: string;
+    generation: number;
+    kind: "APPLY" | "RELEASE";
+    state:
+      | "PENDING"
+      | "RUNNING"
+      | "UNKNOWN"
+      | "DONE"
+      | "CONFLICT"
+      | "ATTENTION";
+    attempts: number;
+    errorCode: string | null;
+  }[];
+}
 export interface WorkspaceQuery {
   offset?: number;
   limit?: number;
@@ -56,6 +78,7 @@ export interface M2Gateway {
   load(query?: WorkspaceQuery): Promise<WorkspaceData>;
   submit(draft: ApplicationDraft): Promise<ApplicationView>;
   detail?(id: string): Promise<ApplicationDetails>;
+  integration?(id: string): Promise<IntegrationProgress>;
   decide?(
     id: string,
     action: "APPROVE" | "REJECT",

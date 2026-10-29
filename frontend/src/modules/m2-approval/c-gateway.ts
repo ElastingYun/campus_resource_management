@@ -7,6 +7,7 @@ import type {
   RoomOption,
   WorkspaceQuery,
 } from "./models";
+import { parseIntegrationProgress } from "./integration-progress";
 import { isObject, isUuid } from "./c-session";
 import type { CSession, CSessionState } from "./c-session";
 import { M2HttpError, requestJson } from "./http";
@@ -112,6 +113,7 @@ function toView(value: CApplication, rooms: RoomOption[]): ApplicationView {
         ? "撤销只针对本申请来源；教室是否可预约仍由资源服务判断。"
         : "审批结果与占用生效分别确认，当前未确认本申请占用生效。",
     reviewLabel: reviewLabels[value.review_status] ?? "未知审批状态",
+    integrationStatus: value.integration_status,
     integrationLabel:
       integrationLabels[value.integration_status] ?? "集成结果待确认",
     effective: value.effective,
@@ -410,6 +412,20 @@ export function createCGateway(
             actions.allowed_actions as ApplicationDetails["allowedActions"],
           history: entries,
         };
+      } catch (cause) {
+        throw safeError(cause);
+      }
+    },
+    async integration(id: string) {
+      if (!isUuid(id)) throw new GatewayMessage("申请编号格式无效。");
+      try {
+        const value = await call(
+          `/api/v1/m2/applications/${encodeURIComponent(id)}/integration`,
+        );
+        const progress = parseIntegrationProgress(value);
+        if (progress.applicationId !== id)
+          throw new GatewayMessage("占用进度与当前申请不一致，请重新载入。");
+        return progress;
       } catch (cause) {
         throw safeError(cause);
       }

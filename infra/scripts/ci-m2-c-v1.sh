@@ -32,6 +32,9 @@ from pathlib import Path
 source = Path(os.environ['CAMPUS_M2_CONTRACT_SERVER'])/'backend/app/modules/m2_approval/examples/runtime.synthetic.json'
 config = json.loads(source.read_text())
 config['resources']['base_url']='http://127.0.0.1:18111'
+# Explicit CI-only policy; no production or shared deployment configuration is changed.
+config['submission']['room_access_policy']='campus_or_own_department'
+config['submission']['allow_cross_department']=False
 Path(os.environ['CAMPUS_C_CONFIG_FILE']).write_text(json.dumps(config))
 CONFIG
 python "$repo_root/infra/scripts/c-v1-resource-fixture.py" > "$RUNNER_TEMP/c-v1-resources.log" 2>&1 &
