@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -42,10 +42,12 @@ PAYLOAD = {"room_id": BIG_ROOM, "description": "合成报修描述，不进入�
 def integrated(case):
     engine = scoped_engine(case.db)
     try:
-        migration = runpy.run_path(str(Path(__file__).with_name("pinned_e02_migration.py")))
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
-                migration["upgrade"]()
+                for name in ("e02_m3_tickets.py", "e03_m3_assignment.py"):
+                    original = Path(__file__).resolve().parents[2] / "alembic" / "versions" / name
+                    fallback = Path(__file__).with_name("pinned_" + name[:3] + "_migration.py")
+                    runpy.run_path(str(original if original.is_file() else fallback))["upgrade"]()
         case.app.state.engine = engine
         for name in ("reporter", "other"):
             case.ids[name] = case.auth.provision_user(
@@ -232,3 +234,27 @@ def test_actual_tcp_login_create_read_logout(integrated):
         thread.join(timeout=5)
         sock.close()
         assert not thread.is_alive()
+
+
+def test_new_e_actions_are_not_enabled_by_creation_identity(integrated):
+    s = integrated
+    install(s)
+    h = headers(s)
+    created = s.client.post("/api/v1/m3/tickets", headers=h, json=PAYLOAD)
+    assert created.status_code == 201
+    path = "/api/v1/m3/tickets/" + created.json()["id"]
+    for action, data, code in (
+        (
+            "/assign",
+            {"expected_version": 0, "assignee_id": str(s.case.ids["reporter"])},
+            "assignment_policy_unconfigured",
+        ),
+        ("/work-starts", {"expected_version": 1}, "restriction_confirmation_unconfigured"),
+    ):
+        response = s.client.post(
+            path + action, headers={**h, "Operation-Id": str(uuid4())}, json=data
+        )
+        assert response.status_code == 503 and response.json()["detail"]["code"] == code
+    tickets, events = facts(s)
+    assert len(tickets) == len(events) == 1
+    assert tickets[0]["status"] == "REPORTED" and tickets[0]["version"] == 0

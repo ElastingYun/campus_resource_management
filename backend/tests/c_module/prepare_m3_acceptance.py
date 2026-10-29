@@ -8,9 +8,12 @@ from pathlib import Path
 
 from prepare_resource_acceptance import git
 
-E_REVISION = "d310c5610ae66341a767244e000d8babb1142b08"
+E_REVISION = "820ebf7d2c1013050c45a042355c788868e2d16d"
 E_MODULE = "backend/app/modules/m3_repair"
-E_MIGRATION = "backend/alembic/versions/e02_m3_tickets.py"
+E_MIGRATIONS = {
+    "backend/alembic/versions/" + name: f"backend/tests/c_module/pinned_{name[:3]}_migration.py"
+    for name in ("e02_m3_tickets.py", "e03_m3_assignment.py")
+}
 
 
 def prepare(source: Path, output: Path) -> None:
@@ -34,11 +37,11 @@ def prepare(source: Path, output: Path) -> None:
     names = git(source, "ls-tree", "-r", "--name-only", E_REVISION, "--", E_MODULE)
     if not names.strip():
         raise ValueError("Missing fixed E ticket module")
-    for name in [*names.decode().splitlines(), E_MIGRATION]:
+    for name in [*names.decode().splitlines(), *E_MIGRATIONS]:
         content = git(source, "show", E_REVISION + ":" + name)
         # Execute only the original E DDL in isolated test schemas, not the
         # unresolved A/C/E graph. Never add E's second head to product migrations.
-        target = "backend/tests/c_module/pinned_e02_migration.py" if name == E_MIGRATION else name
+        target = E_MIGRATIONS.get(name, name)
         destination = output / target
         if destination.exists() and destination.read_bytes() != content:
             raise ValueError("E source must not overwrite current project files")
