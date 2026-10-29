@@ -7,17 +7,33 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from app.modules.m3_repair import service
+from app.modules.m3_repair import assignment, service, work_start
 from app.modules.m3_repair.contracts import (
+    AssignmentAudit,
+    AssignmentPolicy,
+    RestrictionConfirmation,
     RoomPolicy,
     TicketActor,
     TicketAudit,
     TicketError,
+    WorkStartAudit,
+    get_assignment_audit,
+    get_assignment_policy,
+    get_restriction_confirmation,
     get_room_policy,
     get_ticket_actor,
     get_ticket_audit,
+    get_work_start_audit,
 )
-from app.modules.m3_repair.schemas import TicketCreate, TicketOut, TicketPage
+from app.modules.m3_repair.schemas import (
+    AssignmentOut,
+    AssignmentRequest,
+    TicketCreate,
+    TicketOut,
+    TicketPage,
+    WorkStartOut,
+    WorkStartRequest,
+)
 
 
 def get_ticket_session(request: Request) -> Iterator[Session]:
@@ -33,6 +49,10 @@ def create_router(
     actor_dependency: Callable = get_ticket_actor,
     room_policy_dependency: Callable = get_room_policy,
     audit_dependency: Callable = get_ticket_audit,
+    assignment_policy_dependency: Callable = get_assignment_policy,
+    assignment_audit_dependency: Callable = get_assignment_audit,
+    restriction_confirmation_dependency: Callable = get_restriction_confirmation,
+    work_start_audit_dependency: Callable = get_work_start_audit,
     session_dependency: Callable = get_ticket_session,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/m3", tags=["m3"])
@@ -72,5 +92,45 @@ def create_router(
     def detail(ticket_id: UUID, response: Response, actor: Actor, session: DbSession) -> TicketOut:
         response.headers["Cache-Control"] = "no-store"
         return service.get_own_ticket(session, actor, str(ticket_id))
+
+    @router.post("/tickets/{ticket_id}/assign", response_model=AssignmentOut, status_code=201)
+    def assign(
+        ticket_id: UUID,
+        data: AssignmentRequest,
+        response: Response,
+        actor: Actor,
+        policy: Annotated[AssignmentPolicy, Depends(assignment_policy_dependency)],
+        audit: Annotated[AssignmentAudit, Depends(assignment_audit_dependency)],
+        session: DbSession,
+        operation_id: Annotated[UUID, Header(alias="Operation-Id")],
+    ) -> AssignmentOut:
+        result, created = assignment.assign_ticket(
+            session, actor, policy, audit, str(ticket_id), str(operation_id), data
+        )
+        if not created:
+            response.status_code = 200
+        response.headers["Cache-Control"] = "no-store"
+        return result
+
+    @router.post("/tickets/{ticket_id}/work-starts", response_model=WorkStartOut, status_code=201)
+    def start(
+        ticket_id: UUID,
+        data: WorkStartRequest,
+        response: Response,
+        actor: Actor,
+        restriction: Annotated[
+            RestrictionConfirmation, Depends(restriction_confirmation_dependency)
+        ],
+        audit: Annotated[WorkStartAudit, Depends(work_start_audit_dependency)],
+        session: DbSession,
+        operation_id: Annotated[UUID, Header(alias="Operation-Id")],
+    ) -> WorkStartOut:
+        result, created = work_start.start_work(
+            session, actor, restriction, audit, str(ticket_id), str(operation_id), data
+        )
+        if not created:
+            response.status_code = 200
+        response.headers["Cache-Control"] = "no-store"
+        return result
 
     return router
