@@ -41,9 +41,20 @@ CAMPUS_TEST_POSTGRES=1 CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE=1 python -m pytest -q
 | compileall / pip check | 均退出0；No broken requirements found |
 | 新工作流 YAML / diff | Ruby YAML 解析通过，git diff --check 通过 |
 | 本地 Node / Docker | 本轮未改前端；本机 Docker **NOT RUN**，由远端原工程 CI 验证 |
-| GitHub 目标环境 | 创建 PR 后按固定提交补真实运行链接，不以本地结果代替 |
+| GitHub 目标环境 | 固定72c8291的C/B专用PR验收：**163 passed, 1 warning in31.40s**，Python3.13/PostgreSQL17；工程CI也成功，具体链接见下表 |
 
 保留 TestClient/HTTPX 弃用警告，没有过滤。初次测试夹具误在应用生命周期启动前借用宿主池，出现 setup error；改用现有可信 bootstrap 独立初始化账号，应用仍按生命周期创建池。一次边界回归发现无效 request_id 的校验晚于 clock 调用，已将全部 UUID 验证提前到持久化参数构造之前；上述完整结果在修正后取得。
+
+交付 [PR #34](https://github.com/ElastingYun/campus_resource_management/pull/34)，增量base为 #22。固定提交72c8291021cc3cbeb41c37ad259a57a27e7ed194的四轮工作流均已完成且success：
+
+| 运行 | 实际结果 |
+| --- | --- |
+| [C/B push 40792773336](https://github.com/ElastingYun/campus_resource_management/actions/runs/40792773336) | 固定B-v2/C、真实PostgreSQL、事务与TCP验收成功 |
+| [C/B PR 40792912628](https://github.com/ElastingYun/campus_resource_management/actions/runs/40792912628) | 163项通过，无skip；源字节校验、50文件格式检查和重复迁移成功 |
+| [Engineering push 40792773288](https://github.com/ElastingYun/campus_resource_management/actions/runs/40792773288) | 前端、后端/PostgreSQL、Compose登录代理/断库恢复三项成功 |
+| [Engineering PR 40792912662](https://github.com/ElastingYun/campus_resource_management/actions/runs/40792912662) | 同上三项成功 |
+
+后续提交以各自Checks为准；本机Docker的NOT RUN记录保留，远端实际成功不替代生产和浏览器业务验收。
 
 ## 4. 测试有效性负对照
 
