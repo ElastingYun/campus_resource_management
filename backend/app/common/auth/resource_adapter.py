@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import fields
 from datetime import time
+from inspect import signature
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -67,6 +68,7 @@ class NewRoomPolicy(StrictConfiguration):
 class ResourceManagementConfiguration(StrictConfiguration):
     permissions: ResourcePermissions
     new_room: NewRoomPolicy | None = None
+    room_options_permission: Literal["m2.submit"] | None = None
 
 
 def resource_scopes(principal: Principal) -> frozenset[int] | None:
@@ -168,16 +170,32 @@ def install_resource_management(
         getattr(route, "path", "").startswith("/api/v1/resources/") for route in application.routes
     ):
         raise ValueError("Resource routes must not already be mounted")
+    catalog_actor = None
+    if configuration.room_options_permission is not None:
+        try:
+            from app.modules.resources.catalog import RoomOptionsActor
+        except ImportError:
+            raise RuntimeError("B room options port must be installed explicitly") from None
+        if "room_options_actor_dependency" not in signature(create_resources_router).parameters:
+            raise RuntimeError("B room options dependency port is required")
+        if not {"subject", "can_choose", "department_id"}.issubset(
+            {field.name for field in fields(RoomOptionsActor)}
+        ):
+            raise RuntimeError("B room options identity port is incompatible")
+        catalog_actor = RoomOptionsActor
     bearer = HTTPBearer(auto_error=False)
 
-    def actor(
+    def principal_for_request(
         request: Request,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-    ):
+    ) -> Principal:
         if credentials is None:
             raise ServiceError(401, "AUTHENTICATION_REQUIRED", "请先登录")
         principal = auth.authenticate(credentials.credentials)
         request.state.actor_id = principal.subject_id
+        return principal
+
+    def actor(principal: Annotated[Principal, Depends(principal_for_request)]):
         permissions = configuration.permissions
         return ResourceActor(
             subject=str(principal.subject_id),
@@ -186,6 +204,18 @@ def install_resource_management(
             can_create_rooms=permissions.create_rooms in principal.permissions,
             room_ids=resource_scopes(principal),
         )
+
+    def room_options_actor(principal: Annotated[Principal, Depends(principal_for_request)]):
+        try:
+            return catalog_actor(
+                subject=str(principal.subject_id),
+                can_choose=configuration.room_options_permission in principal.permissions,
+                department_id=principal.department_id,
+            )
+        except ValueError:
+            raise ServiceError(
+                503, "RESOURCE_IDENTITY_UNAVAILABLE", "暂时无法确认教室目录身份"
+            ) from None
 
     async def resource_error(request: Request, exc):
         detail = exc.detail
@@ -232,6 +262,7 @@ def install_resource_management(
             actor_dependency=actor,
             audit_sink=resource_audit_sink(audit, auth.clock),
             new_room_settings=NewRoomSettings(**policy.model_dump()) if policy else None,
+            **({"room_options_actor_dependency": room_options_actor} if catalog_actor else {}),
         )
     )
     application.add_exception_handler(ResourceError, resource_error)

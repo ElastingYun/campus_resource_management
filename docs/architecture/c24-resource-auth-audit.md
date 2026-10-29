@@ -2,7 +2,9 @@
 
 负责人 C / Wuyh11，Git 提交身份 wuyihao。关联 [#24](https://github.com/ElastingYun/campus_resource_management/issues/24)、B 审计 v2 [#28](https://github.com/ElastingYun/campus_resource_management/pull/28)、C 基础交付 [#22](https://github.com/ElastingYun/campus_resource_management/pull/22)。日期 2026-10-29。
 
-本增量交付 C 的适配器与真实 C/B 验证，不修改 B 的资源实现，不自动挂载资源接口、创建共享表或授予生产角色。后续负责人已批准普通申请人的校园级/本院系范围，C 的 nullable 院系适配与显式提交策略见 [C-40](c40-approved-room-policy.md)；普通列表端口、生产身份和 D 正式挂载仍待 B/D，#24 保持开放。
+本增量交付 C 的适配器与真实 C/B 验证，不修改 B 的资源实现，不自动挂载资源接口、创建共享表或授予生产角色。后续负责人已批准普通申请人的校园级/本院系范围，C 的 nullable 院系适配与显式提交策略见 [C-40](c40-approved-room-policy.md)；普通列表后续接线见下方C-54，生产身份和D正式挂载/浏览器仍待验收，#24保持开放。
+
+后续B #48已交付独立普通目录，C真实申请身份/能力映射已在[C-54](c54-room-options-identity.md)补齐；显式开启room_options_permission="m2.submit"，不借管理read开放。旧C-24测试固定版本的历史证据保留；当前专用组合更新固定B4ee2fe5，D正式安装、选择器和生产身份仍待Review/验收。
 
 ## 1. 对外端口及显式安装
 

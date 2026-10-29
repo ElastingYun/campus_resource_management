@@ -192,5 +192,6 @@ step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是�
 C 的角色和流程名称由显式配置给出；没有为真实成员或学生自动授权。前端原型数据与真实 API 接入须明确切换。
 当前公开 OpenAPI、代码与本地/CI 结果仅证明 C 的实现和契约测试，真实 A/B/E 联调结果单独记录。
 2026-10-29 负责人已确认普通申请人的选择范围为“已启用的校园级教室及本院系教室”，个人预约冲突时“拒绝整室占用，保留个人预约”。C 的显式提交策略与资源适配见 [C-40](c40-approved-room-policy.md)；提交仍重新读取真实主数据，前端选择结果不构成资格证明。同一幂等键恢复原结果，新键重新校验。
-B v2 固定提交 45bcf2b（Draft PR #28）的管理详情接口已用于独立进程网络测试，支持 campus 的 nullable department_id；普通申请人选择列表的公开路径、可信身份及后端过滤分页仍需 B/D 在 #24 对齐，不能授予普通申请人管理读取权限替代。
+B v2 固定提交 45bcf2b（Draft PR #28）的管理详情接口已用于独立进程网络测试，支持 campus 的 nullable department_id；普通申请人选择列表使用下方独立端口，不能授予普通申请人管理读取权限替代。
+后续B #48/4ee2fe5与[C-54](c54-room-options-identity.md)提供独立普通目录 `/api/v1/resources/room-options` 的过滤分页及真实C身份映射。D在显式开启配置后使用同一Bearer获取items/total/limit/offset；未开启503，不回退管理读。D选择器和完整浏览器仍待接入。
 A 的整合 Draft PR #18 与 C 的 operation_id/generation 协议仍有差异，批准的冲突规则还需 A 原子实现；真实占用、释放与并发在 #23 验收。当前资源测试不证明 A/E 或最终部署已接通。

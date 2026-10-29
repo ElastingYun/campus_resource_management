@@ -48,7 +48,7 @@ PERMISSIONS = ResourcePermissions(
 )
 
 
-def configuration(create=True):
+def configuration(create=True, room_options=False):
     return ResourceManagementConfiguration(
         permissions=PERMISSIONS,
         new_room=NewRoomPolicy(
@@ -60,6 +60,7 @@ def configuration(create=True):
         )
         if create
         else None,
+        room_options_permission="m2.submit" if room_options else None,
     )
 
 
@@ -113,7 +114,10 @@ def integrated(database, tmp_path, monkeypatch, request):
             all_rooms=global_scope,
         )
     install_resource_management(
-        application, auth=component.auth, audit=component.audit, configuration=configuration()
+        application,
+        auth=component.auth,
+        audit=component.audit,
+        configuration=configuration(room_options=getattr(request, "param", False)),
     )
     with TestClient(application) as client:
 
@@ -165,6 +169,13 @@ def test_real_identity_scope_and_untrusted_headers(integrated):
     assert {"AUTHENTICATION_REQUIRED", "resources.forbidden", "resources.room_not_found"}.issubset(
         codes
     )
+
+
+def test_ordinary_directory_stays_closed_without_explicit_selection_configuration(integrated):
+    s = integrated
+    response = s.client.get("/api/v1/resources/room-options", headers=s.headers())
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "identity_unconfigured"
 
 
 def test_crud_persists_exact_c_audit_and_server_request_id(integrated):

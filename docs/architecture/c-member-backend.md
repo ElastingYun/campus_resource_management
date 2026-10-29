@@ -96,6 +96,7 @@ CAMPUS_M1_SERVICE_TOKEN=<配置 M1 时提供>
 列表为带 limit/offset 的数组；详情有 step_index、step_count、审批与集成两类状态及 effective。输入错误不回显凭据或完整请求体。
 C 所有申请写入都要求 Idempotency-Key；同键同内容返回首次结果，最新状态通过 GET 查询。同键不同内容、旧版本或非法状态返回 409。
 主数据静态启用由 B 提供；最终动态占用由 M1 原子判断。C 不直接访问其他模块私有表。
+普通申请目录使用 B #48 的独立 room-options，C按当前Bearer、m2.submit和可信院系显式注入，默认关闭；安装、分页和错误约定见[C-54](c54-room-options-identity.md)。管理读取和普通选择权限独立，D须在宿主完成安装及浏览器接入。
 
 ## 6. M1 恢复与运行边界
 
