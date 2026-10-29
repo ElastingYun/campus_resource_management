@@ -1,0 +1,58 @@
+name: 功能或工程任务
+description: 记录可独立验收的功能、文档、测试或工程工作
+title: '[任务] '
+body:
+- type: textarea
+  id: goal
+  attributes:
+    label: 目标与需求来源
+    description: 说明用户行为、需求编号或已批准决策。
+    placeholder: 谁需要什么能力，为什么需要？
+  validations:
+    required: true
+- type: textarea
+  id: scope
+  attributes:
+    label: 范围与不包含的内容
+    description: 列出模块、目录和跨模块影响，避免顺手扩展。
+    placeholder: '计划修改：
+
+      不包含：'
+  validations:
+    required: true
+- type: textarea
+  id: dependencies
+  attributes:
+    label: 负责人和前置依赖
+    description: 使用真实账号/链接；未确认的接口或规则请标为待决。
+    placeholder: '负责人：
+
+      依赖 Issue / PR：
+
+      待相关 owner 确认：'
+  validations:
+    required: true
+- type: textarea
+  id: acceptance
+  attributes:
+    label: 验收标准
+    description: 写可观察行为，覆盖正常、失败和关键边界。
+    placeholder: '- [ ] 正常路径：
+
+      - [ ] 失败路径：
+
+      - [ ] 边界：'
+  validations:
+    required: true
+- type: textarea
+  id: validation
+  attributes:
+    label: 验证与过程证据
+    description: 区分计划验证和实际结果；描述需要哪些测试、迁移及人工检查。
+    placeholder: '计划运行：
+
+      人工检查：
+
+      AI 参与及人工决策：'
+  validations:
+    required: true

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.health import router
 from app.config import Settings
 from app.database import build_engine
+from app.modules.m1_reservation import router as m1_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -23,6 +24,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(title="Campus Resource Management bootstrap", lifespan=lifespan)
     application.include_router(router)
+    m1_router.register(application)
     return application
 
 

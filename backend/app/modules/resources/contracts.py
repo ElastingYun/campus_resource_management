@@ -59,9 +59,20 @@ class NewRoomSettings:
 
 @dataclass(frozen=True)
 class ResourceMutation:
+    """Audit port v2; JSON changes contain persisted, explicitly allowlisted fields.
+
+    The receiving sink must use the supplied Session without committing it.
+    Identifiers stay Python integers; HTTP/JSON adapters must stringify BIGINTs.
+    """
+
     actor_id: str
     action: Literal["room.create", "room.update", "seat.create", "seat.update"]
     resource_id: int
+    request_id: str
+    room_id: int
+    before: str | None
+    after: str
+    schema_version: Literal[2] = 2
 
 
 AuditSink = Callable[[Session, ResourceMutation], None]

@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import Table, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -22,6 +23,27 @@ from app.modules.resources.contracts import (
     SeatPatch,
 )
 from app.modules.resources.tables import rooms, seats
+
+ROOM_AUDIT_FIELDS = (
+    "code",
+    "name",
+    "location",
+    "access_scope",
+    "department_id",
+    "open_time",
+    "close_time",
+    "enabled",
+)
+SEAT_AUDIT_FIELDS = ("code", "outlet_type", "enabled")
+
+
+def _valid_request_id(value: str | None) -> bool:
+    if not isinstance(value, str) or len(value) != 36:
+        return False
+    try:
+        return str(UUID(value)) == value
+    except ValueError:
+        return False
 
 
 def _view(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -43,11 +65,13 @@ class ResourceService:
         actor: ResourceActor,
         new_room_settings: NewRoomSettings | None = None,
         audit_sink: AuditSink | None = None,
+        request_id: str | None = None,
     ):
         self.session = session
         self.actor = actor
         self.new_room_settings = new_room_settings
         self.audit_sink = audit_sink
+        self.request_id = request_id
 
     def _authorize(self, *, write: bool = False, create: bool = False):
         if not self.actor.subject or not self.actor.can_read:
@@ -58,6 +82,8 @@ class ResourceService:
             raise ResourceError(403, "forbidden", "没有新增教室的权限")
         if write and self.audit_sink is None:
             raise ResourceError(503, "audit_unconfigured", "资源审计尚未接入，暂不能修改")
+        if write and not _valid_request_id(self.request_id):
+            raise ResourceError(503, "audit_context_unconfigured", "资源审计请求上下文尚未接入")
 
     def _room(self, room_id: int):
         if self.actor.room_ids is not None and room_id not in self.actor.room_ids:
@@ -141,9 +167,42 @@ class ResourceService:
                 503, "resource_unavailable", "资源服务暂不可用，请查询结果后重试"
             ) from error
 
-    def _audit(self, action, resource_id: int):
+    def _audit(
+        self, action, table: Table, before: Mapping[str, Any] | None, after: Mapping[str, Any]
+    ):
         assert self.audit_sink is not None
-        self.audit_sink(self.session, ResourceMutation(self.actor.subject, action, resource_id))
+        assert self.request_id is not None
+        fields = ROOM_AUDIT_FIELDS if table is rooms else SEAT_AUDIT_FIELDS
+        changed = [key for key in fields if before is None or before[key] != after[key]]
+
+        def snapshot(row):
+            if row is None:
+                return None
+            return json.dumps(
+                {key: row[key] for key in changed},
+                sort_keys=True,
+                ensure_ascii=False,
+                default=str,
+                separators=(",", ":"),
+            )
+
+        mutation = ResourceMutation(
+            actor_id=self.actor.subject,
+            action=action,
+            resource_id=after["id"],
+            request_id=self.request_id,
+            room_id=after["id"] if table is rooms else after["room_id"],
+            before=snapshot(before),
+            after=snapshot(after),
+        )
+        try:
+            self.audit_sink(self.session, mutation)
+        except Exception as error:
+            # Audit storage constraints are a dependency failure, not a duplicate
+            # room/seat. _write rolls back the same transaction in either case.
+            raise ResourceError(
+                503, "audit_unavailable", "资源审计暂不可用，请查询结果后重试"
+            ) from error
 
     def create_room(self, data: RoomCreate):
         self._authorize(write=True, create=True)
@@ -164,8 +223,9 @@ class ResourceService:
                 )
                 .returning(rooms.c.id)
             )
-            self._audit("room.create", resource_id)
-            return _view(self._room(resource_id))
+            row = self._room(resource_id)
+            self._audit("room.create", rooms, None, row)
+            return _view(row)
 
         return self._write(operation)
 
@@ -179,8 +239,13 @@ class ResourceService:
                 .values(**data.model_dump(), room_id=room_id, enabled=True)
                 .returning(seats.c.id)
             )
-            self._audit("seat.create", resource_id)
-            return self.get_seat(resource_id)
+            row = (
+                self.session.execute(select(seats).where(seats.c.id == resource_id))
+                .mappings()
+                .one()
+            )
+            self._audit("seat.create", seats, None, row)
+            return _view(row)
 
         return self._write(operation)
 
@@ -206,8 +271,13 @@ class ResourceService:
                 .where(table.c.id == resource_id)
                 .values(**changes, updated_at=datetime.now(UTC))
             )
-            self._audit(action, resource_id)
-            return self.get_room(resource_id) if table is rooms else self.get_seat(resource_id)
+            after = (
+                self.session.execute(select(table).where(table.c.id == resource_id))
+                .mappings()
+                .one()
+            )
+            self._audit(action, table, row, after)
+            return _view(after)
 
         return self._write(operation)
 

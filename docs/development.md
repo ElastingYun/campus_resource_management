@@ -91,7 +91,7 @@ npm run typecheck
 npm run build
 ```
 
-Vue 页面行为测试随 D-04 加入；类型检查和构建不能证明申请/审批流程正确。D-03 的 Engineering CI 提供真实 PostgreSQL 和容器检查，分支保护仍需仓库管理员设置。
+Vue 页面行为测试随 D-04 加入；类型检查和构建不能证明申请/审批流程正确。D-03 的 Engineering CI 提供真实 PostgreSQL 和容器检查，main 已标记 protected，具体审核人数和必过检查仍需管理员核对。
 
 ## 依赖更新与模块接入
 
@@ -122,4 +122,4 @@ infra/scripts/ci-smoke.sh 仅允许在带 GITHUB_RUN_ID 的隔离 CI 环境运�
 
 工作流仅请求 contents: read，checkout 不保留推送凭据；没有生产 secrets、自动合并或部署。检查状态名称固定，管理员在 main 保护规则中要求这些检查和非作者审核后才构成强制门禁。
 
-D-03 PR 基于 D-02 分支，仅评审 CI 增量。先由人工评审并合并 D-02，再将 D-03 的目标分支改为 main 并重新检查后合并；不以依赖 PR 绕过审核。实测记录见 [D03 工程验证记录](testing/d03-quality-verification.md)。
+实际合并链为 D-03 PR #9 → D-02 分支 → PR #8 → main。PR #8 获得非作者批准，主线 CI 已通过；后续依赖 PR 仍须说明 base/head 和最终进入主线的路径。实测记录见 [D03 工程验证记录](testing/d03-quality-verification.md)。

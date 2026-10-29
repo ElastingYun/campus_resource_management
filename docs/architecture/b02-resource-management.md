@@ -1,6 +1,7 @@
 # B-02 教室与座位管理：实现及接入边界
 
 负责人 B / hrzhao7。状态：第一阶段代码，待 A/C/D 评审和真实接入。
+后续审计端口与可信请求上下文升级见 [B 资源审计 v2](b-resource-audit-v2.md)；真实接入时应按最新版本更新事件字段及写入上下文依赖。
 关联 [Issue #19](https://github.com/ElastingYun/campus_resource_management/issues/19)、[接口讨论 #10](https://github.com/ElastingYun/campus_resource_management/issues/10)、[C 接入 #14](https://github.com/ElastingYun/campus_resource_management/issues/14)、[A 整合 PR #18](https://github.com/ElastingYun/campus_resource_management/pull/18)。
 
 本轮实现 B-UI-05、B-RES-01/02/06 中可独立测试的管理能力。共享模型、普通学生的数据范围、创建策略及正式认证尚未获其他 owner 确认；不能把本模块测试通过当作真实跨模块联调通过。

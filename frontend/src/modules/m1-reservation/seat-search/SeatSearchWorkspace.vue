@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import BookingPanel from "../booking/BookingPanel.vue";
+import { createBookingFlow } from "../booking/flow";
+import { createUnconfiguredBookingGateway } from "../booking/gateway";
+import { createPrototypeBookingGateway } from "../booking/prototype";
+import { BookingError, selectBooking } from "../booking/models";
+import type { BookingGateway } from "../booking/models";
 import {
   businessDate,
   outletLabels,
@@ -10,11 +16,33 @@ import {
 import type {
   SearchResult,
   SearchSettings,
+  SearchSeat,
   SeatQuery,
   SeatSearchGateway,
 } from "./models";
 
-const props = defineProps<{ gateway: SeatSearchGateway }>();
+const props = defineProps<{
+  gateway: SeatSearchGateway;
+  bookingGateway?: BookingGateway;
+}>();
+const emit = defineEmits<{ bookingPending: [pending: boolean] }>();
+const requestedBooking =
+  props.bookingGateway ??
+  (props.gateway.mode === "prototype"
+    ? createPrototypeBookingGateway()
+    : createUnconfiguredBookingGateway());
+const bookingGateway =
+  requestedBooking.mode === props.gateway.mode
+    ? requestedBooking
+    : createUnconfiguredBookingGateway();
+const booking = createBookingFlow(bookingGateway);
+watch(
+  () => booking.pending,
+  (pending) => emit("bookingPending", pending),
+  { immediate: true, flush: "sync" },
+);
+const leavingWarning = ref(false);
+const canBook = bookingGateway.mode !== "unconfigured";
 const settings = ref<SearchSettings>();
 const loadingSettings = ref(false),
   searching = ref(false),
@@ -42,7 +70,8 @@ const disabled = computed(
   () =>
     props.gateway.mode === "unconfigured" ||
     !settings.value ||
-    loadingSettings.value,
+    loadingSettings.value ||
+    booking.active,
 );
 const availableCount = computed(
   () =>
@@ -50,11 +79,42 @@ const availableCount = computed(
     0,
 );
 function invalidate() {
+  if (booking.active) return;
   generation++;
   searchController?.abort();
   searching.value = false;
   result.value = undefined;
   error.value = "";
+}
+function chooseSeat(seat: SearchSeat) {
+  if (!result.value || booking.active || !canBook) return;
+  try {
+    if (!booking.open(selectBooking(seat, result.value)))
+      error.value = "请先登录后预约。";
+  } catch (cause) {
+    error.value =
+      cause instanceof BookingError ? cause.message : "请重新查询座位。";
+  }
+}
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (booking.pending) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+}
+function guardNavigation(event: MouseEvent) {
+  if (
+    booking.pending &&
+    event.target instanceof Element &&
+    event.target.closest("a[href]")
+  ) {
+    event.preventDefault();
+    leavingWarning.value = true;
+  }
+}
+function closeBooking() {
+  leavingWarning.value = false;
+  invalidate();
 }
 function message(cause: unknown) {
   return cause instanceof SearchError
@@ -134,9 +194,12 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 onMounted(() => {
+  window.addEventListener("beforeunload", beforeUnload);
   if (props.gateway.mode !== "unconfigured") void loadSettings();
 });
 onUnmounted(() => {
+  window.removeEventListener("beforeunload", beforeUnload);
+  booking.dispose();
   generation++;
   settingsGeneration++;
   searchController?.abort();
@@ -145,7 +208,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="seat-search">
+  <main class="seat-search" @click.capture="guardNavigation">
     <header class="search-heading">
       <div>
         <a href="#">← 返回首页</a>
@@ -161,7 +224,7 @@ onUnmounted(() => {
       role="note"
     >
       <strong>合成数据演示</strong> ·
-      座位状态为固定示例，不随时段计算；不会发送预约或修改真实数据。
+      座位状态为固定示例，不随时段计算；预约仅记录在页面内存，不修改真实数据。
     </aside>
     <aside
       v-else-if="gateway.mode === 'unconfigured'"
@@ -255,6 +318,20 @@ onUnmounted(() => {
         先查询全部教室，再按返回的教室筛选。查询结果仅代表该次响应，预约提交时需重新校验。
       </p>
     </form>
+    <BookingPanel
+      v-if="gateway.businessTimeZone"
+      :flow="booking"
+      :time-zone="gateway.businessTimeZone"
+      :prototype="bookingGateway.mode === 'prototype'"
+      @closed="closeBooking"
+    />
+    <p
+      v-if="leavingWarning && booking.pending"
+      class="search-error"
+      role="alert"
+    >
+      请先核对原预约结果，再离开当前页面。
+    </p>
     <div v-if="loadingSettings" class="search-state" role="status">
       正在读取预约规则…
     </div>
@@ -286,7 +363,13 @@ onUnmounted(() => {
             {{ result.hours }} 小时
           </p>
         </div>
-        <span>仅查询 · 预约提交待接入</span>
+        <span>{{
+          canBook
+            ? bookingGateway.mode === "prototype"
+              ? "合成预约演示"
+              : "选择可用座位继续预约"
+            : "仅查询 · 预约提交待接入"
+        }}</span>
       </div>
       <p v-if="result.seats.length === 0" class="search-state" role="status">
         没有符合条件的座位，请调整时间、教室或插座条件。
@@ -319,6 +402,15 @@ onUnmounted(() => {
           <p v-if="seat.status === 'unknown'" class="unknown-note">
             可用性未确认，不能据此预约。
           </p>
+          <button
+            :disabled="
+              seat.status !== 'available' || !canBook || booking.active
+            "
+            :aria-label="`预约 ${seat.roomCode} ${seat.code} 号座位`"
+            @click="chooseSeat(seat)"
+          >
+            选择此座位
+          </button>
         </article>
       </div>
     </section>
