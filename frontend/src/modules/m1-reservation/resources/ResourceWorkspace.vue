@@ -27,6 +27,14 @@ const local = createResourceSession(localGateway, {
 const session = retained ?? local;
 const editing = computed(() => retained?.current ?? local.current!);
 const canManage = computed(() => session.canManage && !editing.value.pending);
+const canCreateRooms = computed(
+  () => session.canCreateRooms && !editing.value.pending,
+);
+const canEditForm = computed(
+  () =>
+    session.canManage &&
+    !(form.value?.kind === "room" && !form.value.id && !session.canCreateRooms),
+);
 const form = computed({
   get: () => editing.value.state.form,
   set: (value) => {
@@ -197,7 +205,12 @@ function clearVisible() {
   seatError.value = "";
 }
 watch(
-  () => [retained?.currentActorId, retained?.canManage],
+  () => [
+    retained?.currentActorId,
+    retained?.canManage,
+    retained?.canCreateRooms,
+    retained?.contextVersion,
+  ],
   () => {
     clearVisible();
     if (retained?.currentActorId) void loadRooms();
@@ -234,7 +247,7 @@ onUnmounted(() => {
         <p>维护资源资料，让每个座位有据可查。</p>
       </div>
       <button
-        :disabled="!canManage || saving || roomLoading || !!form"
+        :disabled="!canCreateRooms || saving || roomLoading || !!form"
         @click="openForm('room')"
       >
         新增教室
@@ -269,6 +282,9 @@ onUnmounted(() => {
       <p v-if="form.kind === 'seat'" class="hint">
         所属教室稳定ID：{{ form.roomId }}；保存目标在打开表单时确定。
       </p>
+      <p v-if="!canEditForm" class="hint" role="status">
+        新建教室权限已变化，草稿已保留。请取消或确认权限后再保存。
+      </p>
       <form @submit.prevent="save">
         <label for="resource-code">{{
           form.kind === "room" ? "教室编号" : "座位编号"
@@ -278,7 +294,7 @@ onUnmounted(() => {
           v-model="draft.code"
           required
           maxlength="32"
-          :disabled="saving || uncertain || !session.canManage"
+          :disabled="saving || uncertain || !canEditForm"
           autocomplete="off"
         />
         <template v-if="form.kind === 'room'">
@@ -288,7 +304,7 @@ onUnmounted(() => {
             v-model="draft.name"
             required
             maxlength="100"
-            :disabled="saving || uncertain || !session.canManage"
+            :disabled="saving || uncertain || !canEditForm"
           />
           <label for="room-location">位置</label
           ><input
@@ -296,7 +312,7 @@ onUnmounted(() => {
             v-model="draft.location"
             required
             maxlength="200"
-            :disabled="saving || uncertain || !session.canManage"
+            :disabled="saving || uncertain || !canEditForm"
           />
         </template>
         <template v-else>
@@ -304,7 +320,7 @@ onUnmounted(() => {
           ><select
             id="seat-outlet"
             v-model="draft.outlet_type"
-            :disabled="saving || uncertain || !session.canManage"
+            :disabled="saving || uncertain || !canEditForm"
           >
             <option value="none">无插座</option>
             <option value="fixed">固定插座</option>
@@ -313,10 +329,7 @@ onUnmounted(() => {
         </template>
         <p v-if="saveError" role="alert">{{ saveError }}</p>
         <div class="actions">
-          <button
-            type="submit"
-            :disabled="saving || uncertain || !session.canManage"
-          >
+          <button type="submit" :disabled="saving || uncertain || !canEditForm">
             {{ saving ? "正在保存…" : "保存" }}</button
           ><button
             type="button"
