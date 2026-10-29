@@ -44,8 +44,9 @@ describe("C-v1 gateway contract", () => {
     expect(data.applications[0]?.effective).toBe(false);
     expect(data.applications[0]?.reviewLabel).toBe("审批已通过");
     expect(data.applications[0]?.integrationLabel).toBe("正在确认占用");
-    expect(data.canSubmit).toBe(false);
-    expect(data.roomWarning).toContain("教室读取尚未就绪");
+    expect(data.canSubmit).toBe(true); // Can open the form; a directory selection is still required.
+    expect(data.rooms).toEqual([]);
+    await expect(gateway.roomOptions!()).rejects.toThrow("没有选择教室的权限");
     await expect(gateway.submit(draft())).rejects.toThrow("不能提交");
     expect(fetch).toHaveBeenCalledTimes(2);
   });

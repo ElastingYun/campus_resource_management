@@ -41,3 +41,22 @@ export const json = (data: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+export const integrationProgress = (changes: Record<string, unknown> = {}) => ({
+  application_id: applicationId,
+  version: 1,
+  generation: 1,
+  integration_status: "APPLY_UNKNOWN",
+  effective: false,
+  operations: [
+    {
+      id: "00000000-0000-4000-8000-000000000020",
+      generation: 1,
+      kind: "APPLY",
+      state: "UNKNOWN",
+      attempts: 2,
+      error_code: "REMOTE_UNCONFIRMED",
+    },
+  ],
+  ...changes,
+});

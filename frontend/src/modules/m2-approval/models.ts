@@ -1,8 +1,20 @@
 /** Page view models, not an approved backend request/response contract. */
 export interface RoomOption {
   id: string;
+  code?: string;
   name: string;
   location: string;
+}
+export interface RoomOptionsQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export interface RoomOptionsPage {
+  items: RoomOption[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 export interface ApplicationView {
   id: string;
@@ -16,6 +28,7 @@ export interface ApplicationView {
   note: string;
   reviewLabel?: string;
   integrationLabel?: string;
+  integrationStatus?: string;
   effective?: boolean;
   stepLabel?: string;
   version?: number;
@@ -38,6 +51,27 @@ export interface ApplicationDetails extends ApplicationView {
     occurredAt: string;
   }[];
 }
+export interface IntegrationProgress {
+  applicationId: string;
+  version: number;
+  generation: number;
+  integrationStatus: string;
+  effective: boolean;
+  operations: {
+    id: string;
+    generation: number;
+    kind: "APPLY" | "RELEASE";
+    state:
+      | "PENDING"
+      | "RUNNING"
+      | "UNKNOWN"
+      | "DONE"
+      | "CONFLICT"
+      | "ATTENTION";
+    attempts: number;
+    errorCode: string | null;
+  }[];
+}
 export interface WorkspaceQuery {
   offset?: number;
   limit?: number;
@@ -56,6 +90,8 @@ export interface M2Gateway {
   load(query?: WorkspaceQuery): Promise<WorkspaceData>;
   submit(draft: ApplicationDraft): Promise<ApplicationView>;
   detail?(id: string): Promise<ApplicationDetails>;
+  roomOptions?(query?: RoomOptionsQuery): Promise<RoomOptionsPage>;
+  integration?(id: string): Promise<IntegrationProgress>;
   decide?(
     id: string,
     action: "APPROVE" | "REJECT",
