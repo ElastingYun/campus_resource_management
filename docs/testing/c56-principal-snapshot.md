@@ -42,3 +42,5 @@ CAMPUS_TEST_POSTGRES=1 CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE=1 python -m pytest -q
 C独立分支在backend/运行 `CAMPUS_TEST_POSTGRES=1 python -m pytest -q`，未设置CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE：**154 passed, 2 skipped, 1 warning in29.44s**。两个skip为B未安装的组合模块，专用验收要求B存在；记录 `/private/tmp/c56-standalone-regression.log`。
 
 本地C Ruff/格式48文件、组合58文件、编译、依赖一致性和diff检查通过。远端Python3.13/PostgreSQL17及前端/Compose以本增量PR实际Checks为准，完成后补链接。保留既有TestClient/HTTPX弃用警告，不为此增加依赖或削弱测试。原C SQL和OpenAPI保持，无迁移、工作流或其他owner代码改动。本机Docker NOT RUN，真实A/M1 #23、E通知#25、D选择器和非作者Review仍是独立待办。
+
+交付 [PR #57](https://github.com/ElastingYun/campus_resource_management/pull/57)。固定325e2ea的 [Engineering push40826497276](https://github.com/ElastingYun/campus_resource_management/actions/runs/40826497276)、[Engineering PR40826806144](https://github.com/ElastingYun/campus_resource_management/actions/runs/40826806144)、[C/B push40826497184](https://github.com/ElastingYun/campus_resource_management/actions/runs/40826497184)、[C/B PR40826806057](https://github.com/ElastingYun/campus_resource_management/actions/runs/40826806057) 四轮共8项全部success；目标PG17日志 **260 passed, 1 warning in83.76s**，无skip。后续提交按其实际Checks核对。
