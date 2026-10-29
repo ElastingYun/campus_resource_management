@@ -11,7 +11,7 @@ C 负责 M2 审批、公共认证/RBAC 和本地操作审计。当前实现已�
 | `backend/app/common/auth/` | Argon2、随机 Bearer 会话摘要、退出/过期/停用、实时权限和资源范围、登录限流、幂等账号引导、受策略约束的授权管理 |
 | `backend/app/common/auth/bootstrap.py` | 独立、显式的受信账号初始化；密码通过交互或环境读取 |
 | `backend/app/common/audit/` | 成功审计同事务，拒绝审计独立事务；受权范围查询及字段白名单 |
-| `backend/app/modules/m2_approval/service.py` | 申请、流程快照、顺序多级决定、历史、超时、可配置撤销、服务端动作查询、幂等与业务事件 |
+| `backend/app/modules/m2_approval/service.py` | 申请、流程快照、顺序多级决定、历史、超时、可配置撤销、服务端动作/集成进度查询、幂等与业务事件 |
 | `backend/app/modules/m2_approval/api.py` | 严格输入、公开响应模型、Bearer 与错误 OpenAPI、请求关联标识 |
 | `backend/app/modules/m2_approval/runtime.py` | 复用宿主连接池、显式策略、后台扫描/M1 处理、启停恢复和组件就绪检查 |
 | `backend/app/modules/m2_approval/clients.py` | 资源读取及 M1 占用/释放/结果查询 HTTP 适配器，服务路径与凭据显式配置 |
@@ -19,7 +19,7 @@ C 负责 M2 审批、公共认证/RBAC 和本地操作审计。当前实现已�
 | `backend/alembic/versions/0002_c_identity_approval.py` | C 自有 schema 及旧 C 基线的无损接入 |
 
 未完成：真实学校统一登录、真实前端业务联调、A/B/E 服务联调、远程审计接收与投递、通知发送、生产部署。
-业务事件已保存，通知投递尚无已批准的接收契约。重试耗尽后保留 ATTENTION，目前没有告警或人工重新入队 API。
+业务事件已保存，通知投递尚无已批准的接收契约。重试耗尽后保留 ATTENTION，可通过[C-37只读进度接口](c37-integration-progress.md)查看；目前没有告警或人工重新入队 API。
 
 ## 2. 依赖、迁移与测试
 
