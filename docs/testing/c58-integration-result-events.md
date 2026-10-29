@@ -26,4 +26,6 @@ python -m pytest backend/tests/c_module/test_integration_events.py \
 
 仅在 `/private/tmp/c58-negative` 关闭worker的结果事件写入：成功/冲突两项 **2 passed → 2 failed**（事件0而非1）→逐字节恢复 **2 passed**，记录 `/private/tmp/c58-negative-control.log`。状态转换仍执行，故可证明测试确实检查事件持久化，未提交破坏实现或降低断言。
 
-目标CI完成后补链接。产品没有新增Schema/迁移、HTTP、运行依赖或工作流，原C冻结SQL不变。本机Docker NOT RUN；A实际网络、E通知和D页面仍分别验收。
+交付 [PR #59](https://github.com/ElastingYun/campus_resource_management/pull/59)。固定0a65222的 [Engineering push40828037008](https://github.com/ElastingYun/campus_resource_management/actions/runs/40828037008)、[Engineering PR40828121859](https://github.com/ElastingYun/campus_resource_management/actions/runs/40828121859)、[C/B push40828037058](https://github.com/ElastingYun/campus_resource_management/actions/runs/40828037058)、[C/B PR40828121857](https://github.com/ElastingYun/campus_resource_management/actions/runs/40828121857) 四轮共8项全部success，包含目标PG17回归、前端构建和Compose构建/断库恢复。后续提交按其实际Checks核对。
+
+产品没有新增Schema/迁移、HTTP、运行依赖或工作流，原C冻结SQL不变。本机Docker NOT RUN；A实际网络、E通知和D页面仍分别验收。
