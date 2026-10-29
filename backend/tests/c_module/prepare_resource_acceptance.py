@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-B_REVISION = "45bcf2be8fbc7cee5f97b75aec4be7d061d5ff8a"
+B_REVISION = "4ee2fe5b2b221d7b5e24cd7f94ede1022a8353f3"
 B_PATHS = ("backend/app/modules/resources", "backend/tests/resources")
 
 

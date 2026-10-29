@@ -19,6 +19,7 @@
 | 当前审批待办 | `GET /m2/review-tasks?limit=50&offset=0` | 当前节点、权限与资源范围内的申请数组 |
 | 节点决定 | `POST /m2/applications/{id}/decisions` | 更新后的申请视图 |
 | 可执行操作 | `GET /m2/applications/{id}/actions` | 申请 ID、当前版本、allowed_actions |
+| 占用处理进度 | `GET /m2/applications/{id}/integration` | 当前版本/代次、集成状态与精简操作状态；见[C-37](c37-integration-progress.md) |
 | 节点历史 | `GET /m2/applications/{id}/history` | 节点决定数组 |
 | 撤销 | `POST /m2/applications/{id}/revocations` | 更新后的申请视图；须显式配置允许并有权限 |
 | 审计查询 | `GET /audit/events?limit=50&offset=0` | 受权限和范围约束的审计数组 |
@@ -137,6 +138,7 @@ step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是�
 | M1 确认释放 | 保留历史审批结果 | RELEASED | 本申请来源已释放 |
 
 只有 effective=true 才展示预约已生效；资源是否可再次预约由 M1 汇总剩余来源判定。
+重试耗尽仍保留申请的未知集成状态，处理进度中的 operation.state=ATTENTION 表示C后台已停止自动重试、需要核查；不意味着占用成功或已经安全释放。操作状态变化可能不增加申请version，刷新时须实际查询integration接口，不能只用申请版本缓存。
 后台扫描只处理未撤销的 REVIEWING 申请。审批完成后的自动到期撤销、申请人自由撤回、终态重开当前未启用。
 几级审批、期限、自审、驳回理由和撤销许可均来自显式流程配置；合成示例的两级审批不是全平台规则。
 
@@ -189,4 +191,7 @@ step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是�
 前端通过 `/api/v1` 同源代理访问。实际资源查询需要 B 的实现；真实占用、释放及乱序终态保护需要 A 的实现；通知投递需要 E 的契约。
 C 的角色和流程名称由显式配置给出；没有为真实成员或学生自动授权。前端原型数据与真实 API 接入须明确切换。
 当前公开 OpenAPI、代码与本地/CI 结果仅证明 C 的实现和契约测试，真实 A/B/E 联调结果单独记录。
-截至 2026-10-28，对方实现已出现于 A 的整合 Draft PR #18 和 B 的 Draft PR #20；它们尚不等于主线可调用服务。A 的来源限制协议与 C 的 operation_id/generation 协议有差异，B 的校园级 nullable department_id 及普通用户可见范围仍待共同对齐，不能只改 URL 就宣称接通。
+2026-10-29 负责人已确认普通申请人的选择范围为“已启用的校园级教室及本院系教室”，个人预约冲突时“拒绝整室占用，保留个人预约”。C 的显式提交策略与资源适配见 [C-40](c40-approved-room-policy.md)；提交仍重新读取真实主数据，前端选择结果不构成资格证明。同一幂等键恢复原结果，新键重新校验。
+B v2 固定提交 45bcf2b（Draft PR #28）的管理详情接口已用于独立进程网络测试，支持 campus 的 nullable department_id；普通申请人选择列表使用下方独立端口，不能授予普通申请人管理读取权限替代。
+后续B #48/4ee2fe5与[C-54](c54-room-options-identity.md)提供独立普通目录 `/api/v1/resources/room-options` 的过滤分页及真实C身份映射。D在显式开启配置后使用同一Bearer获取items/total/limit/offset；未开启503，不回退管理读。D选择器和完整浏览器仍待接入。
+A 的整合 Draft PR #18 与 C 的 operation_id/generation 协议仍有差异，批准的冲突规则还需 A 原子实现；真实占用、释放与并发在 #23 验收。当前资源测试不证明 A/E 或最终部署已接通。

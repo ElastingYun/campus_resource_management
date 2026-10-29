@@ -11,7 +11,7 @@ C 负责 M2 审批、公共认证/RBAC 和本地操作审计。当前实现已�
 | `backend/app/common/auth/` | Argon2、随机 Bearer 会话摘要、退出/过期/停用、实时权限和资源范围、登录限流、幂等账号引导、受策略约束的授权管理 |
 | `backend/app/common/auth/bootstrap.py` | 独立、显式的受信账号初始化；密码通过交互或环境读取 |
 | `backend/app/common/audit/` | 成功审计同事务，拒绝审计独立事务；受权范围查询及字段白名单 |
-| `backend/app/modules/m2_approval/service.py` | 申请、流程快照、顺序多级决定、历史、超时、可配置撤销、服务端动作查询、幂等与业务事件 |
+| `backend/app/modules/m2_approval/service.py` | 申请、流程快照、顺序多级决定、历史、超时、可配置撤销、服务端动作/集成进度查询、幂等与业务事件 |
 | `backend/app/modules/m2_approval/api.py` | 严格输入、公开响应模型、Bearer 与错误 OpenAPI、请求关联标识 |
 | `backend/app/modules/m2_approval/runtime.py` | 复用宿主连接池、显式策略、后台扫描/M1 处理、启停恢复和组件就绪检查 |
 | `backend/app/modules/m2_approval/clients.py` | 资源读取及 M1 占用/释放/结果查询 HTTP 适配器，服务路径与凭据显式配置 |
@@ -19,7 +19,8 @@ C 负责 M2 审批、公共认证/RBAC 和本地操作审计。当前实现已�
 | `backend/alembic/versions/0002_c_identity_approval.py` | C 自有 schema 及旧 C 基线的无损接入 |
 
 未完成：真实学校统一登录、真实前端业务联调、A/B/E 服务联调、远程审计接收与投递、通知发送、生产部署。
-业务事件已保存，通知投递尚无已批准的接收契约。重试耗尽后保留 ATTENTION，目前没有告警或人工重新入队 API。
+业务事件已保存，通知投递尚无已批准的接收契约。重试耗尽后保留 ATTENTION，可通过[C-37只读进度接口](c37-integration-progress.md)查看；目前没有告警或人工重新入队 API。
+占用成功/冲突/释放确认现也有同事务业务事件，重试与旧代次返回不重复记录；见[C-58](c58-integration-result-events.md)。它们仍是本地事实，E实际通知投递待#25对接。
 
 ## 2. 依赖、迁移与测试
 
@@ -60,6 +61,7 @@ CAMPUS_M1_SERVICE_TOKEN=<配置 M1 时提供>
 资源/M1 的标准 SecretStr 字段支持环境变量和根 `.env`；自定义 token_env 名称需显式导出到进程环境。日志和配置 repr 不显示实际凭据。
 配置文件的结构示例位于 `backend/app/modules/m2_approval/examples/runtime.synthetic.json`，名称和内容明确为合成示例，须按批准政策和实际服务修改。
 所有审批层级/期限、自审、驳回理由、撤销许可、院系准入、提前量、时长和时间粒度显式给出。布尔字符串、URL 内嵌凭据、跨主机路径和不合法租约均拒绝。
+2026-10-29 已批准的校园级/本院系准入通过 `submission.room_access_policy="campus_or_own_department"` 显式启用，且 `allow_cross_department=false`。配置示例、B v2 元数据和兼容边界见 [C-40 说明](c40-approved-room-policy.md)。旧合成示例保留 legacy 行为，不代表满足新规则。
 `m1=null` 允许先对接身份与审批；最终审批后保持占用待确认。只有 M1 确认后 effective 才为 true。
 `access_management=null` 关闭账号授权管理；启用后还须 auth.manage、原/新范围校验及非越权委派。
 
@@ -92,9 +94,11 @@ CAMPUS_M1_SERVICE_TOKEN=<配置 M1 时提供>
 
 完整的字段、权限、状态、错误及合成示例见 [C-v1 前端契约](c-v1-frontend-contract.md) 和 [OpenAPI](c-v1-openapi.json)。
 业务统一前缀 `/api/v1`；Vite 与 Nginx 的 `/api` 代理转发到后端。登录后使用 Bearer 会话，前端通过 actions 查询当前允许的决定/撤销动作，写入仍重新授权与校验版本。
+认证主体的启用、院系、资源范围与角色权限使用同一SQL语句快照，防止并发授权变更拼接旧范围/新权限；[C-56真实并发验证](../testing/c56-principal-snapshot.md)记录复现、修复与负对照。整合旧C分支时须纳入该修复，不能只凭旧CI成功判断身份一致性已覆盖。
 列表为带 limit/offset 的数组；详情有 step_index、step_count、审批与集成两类状态及 effective。输入错误不回显凭据或完整请求体。
 C 所有申请写入都要求 Idempotency-Key；同键同内容返回首次结果，最新状态通过 GET 查询。同键不同内容、旧版本或非法状态返回 409。
 主数据静态启用由 B 提供；最终动态占用由 M1 原子判断。C 不直接访问其他模块私有表。
+普通申请目录使用 B #48 的独立 room-options，C按当前Bearer、m2.submit和可信院系显式注入，默认关闭；安装、分页和错误约定见[C-54](c54-room-options-identity.md)。管理读取和普通选择权限独立，D须在宿主完成安装及浏览器接入。
 
 ## 6. M1 恢复与运行边界
 
@@ -103,6 +107,7 @@ M1 的 base_url、apply_path、release_path、query_path、token_env、I/O 超�
 损坏响应、重定向、错误标识和网络中断保留未知结果。查询或重发使用同一操作与内容，不生成新标识猜测执行结果。
 M1 需要持久幂等与版本/终态保护；本地 generation/租约隔离不能代替远端防止“释放先到、旧创建后到”复活占用。
 释放只撤销该申请来源；M1 仍须考虑其他个人预约、审批或维修。重试耗尽进入 ATTENTION，保持业务事实并等待受控处理。
+已批准的个人预约冲突规则是 M1 原子拒绝整室占用、保留个人预约；C 保留 PASSED 审批事实，以 APPLY_CONFLICT 和 effective=false 表示未生效。A 的原子拒绝实现与真实网络验收仍在 #23，不能先写 active 来源再补偿释放。
 本地幂等及操作记录尚无自动清理任务，不能删掉历史键后继续接受重放。
 
 ## 7. 迁移与合成演示

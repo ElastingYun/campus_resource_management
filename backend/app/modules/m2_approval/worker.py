@@ -7,6 +7,7 @@ from app.common.audit.service import AuditService
 from app.common.auth.database import Database
 from app.common.auth.domain import aware, utcnow
 from app.modules.m2_approval.clients import M1Gateway, Outcome, RemoteUnavailable
+from app.modules.m2_approval.events import record_business_event
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,9 @@ class OperationWorker:
             if not row:
                 return None
             if row["attempts"] >= self.settings.max_attempts:
+                application = conn.execute(
+                    "SELECT room_id FROM c_applications WHERE id=%s", (row["application_id"],)
+                ).fetchone()
                 conn.execute(
                     """UPDATE c_m1_operations SET state='ATTENTION',lease_until=NULL,
                        lease_token=NULL,error_code='RETRY_LIMIT' WHERE id=%s""",
@@ -59,6 +63,7 @@ class OperationWorker:
                     actor=None,
                     action="m1.attention",
                     target=str(row["id"]),
+                    room_id=application["room_id"],
                     result="RETRY_LIMIT",
                     now=now,
                     request_id=str(row["id"]),
@@ -125,11 +130,20 @@ class OperationWorker:
                     else "RELEASE_UNKNOWN"
                 )
                 if status != application["integration_status"]:
-                    conn.execute(
+                    updated = conn.execute(
                         """UPDATE c_applications SET integration_status=%s,version=version+1,
-                           updated_at=%s WHERE id=%s""",
+                           updated_at=%s WHERE id=%s RETURNING *""",
                         (status, now, application["id"]),
-                    )
+                    ).fetchone()
+                    event_type = {
+                        "APPLIED": "application.occupancy_confirmed",
+                        "APPLY_CONFLICT": "application.occupancy_conflict",
+                        "RELEASED": "application.occupancy_released",
+                    }.get(status)
+                    if event_type is not None:
+                        record_business_event(
+                            conn, updated, event_type, now, operation_id=operation["id"]
+                        )
                     self.audit.record(
                         conn,
                         actor=None,

@@ -89,6 +89,24 @@ class ActionView(BaseModel):
     allowed_actions: list[Literal["APPROVE", "REJECT", "REVOKE"]]
 
 
+class IntegrationOperationView(BaseModel):
+    id: UUID
+    generation: int
+    kind: Literal["APPLY", "RELEASE"]
+    state: Literal["PENDING", "RUNNING", "UNKNOWN", "DONE", "CONFLICT", "ATTENTION"]
+    attempts: int
+    error_code: str | None
+
+
+class IntegrationProgressView(BaseModel):
+    application_id: UUID
+    version: int
+    generation: int
+    integration_status: str
+    effective: bool
+    operations: list[IntegrationOperationView]
+
+
 class SessionView(BaseModel):
     access_token: str = Field(repr=False)
     token_type: Literal["bearer"]
@@ -343,6 +361,14 @@ def install(
     )
     def application(application_id: UUID, principal: Current):
         return approval.get(principal, application_id)
+
+    @router.get(
+        "/m2/applications/{application_id}/integration",
+        response_model=IntegrationProgressView,
+        tags=["approval"],
+    )
+    def integration(application_id: UUID, principal: Current):
+        return approval.integration_progress(principal, application_id)
 
     @router.get(
         "/m2/applications/{application_id}/history",

@@ -1,7 +1,7 @@
 """Explicit deployment policies; no production approval rules are implied."""
 
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -45,6 +45,13 @@ class SubmissionConfiguration(Configuration):
     minimum_notice_seconds: int = Field(ge=0)
     time_granularity_seconds: int | None = Field(ge=1, le=86400)
     max_duration_seconds: int | None = Field(gt=0)
+    room_access_policy: Literal["legacy", "campus_or_own_department"] = "legacy"
+
+    @model_validator(mode="after")
+    def approved_scope_does_not_allow_other_departments(self) -> Self:
+        if self.room_access_policy == "campus_or_own_department" and self.allow_cross_department:
+            raise ValueError("The approved room policy cannot allow cross-department applications")
+        return self
 
     @field_validator("timezone")
     @classmethod

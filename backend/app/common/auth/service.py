@@ -53,14 +53,20 @@ class AuthService:
         self._dummy_hash = self.hasher.hash(secrets.token_urlsafe(32))
 
     def _principal(self, conn, user_id: UUID) -> Principal:
-        user = conn.execute("SELECT * FROM c_users WHERE id=%s AND enabled", (user_id,)).fetchone()
+        # A READ COMMITTED transaction alone does not give multiple SELECTs
+        # one snapshot. Scope and permissions must describe the same version.
+        user = conn.execute(
+            """SELECT u.*,COALESCE((
+                 SELECT jsonb_agg(jsonb_build_object('name',r.name,'permissions',r.permissions))
+                 FROM c_roles r JOIN c_user_roles ur ON ur.role_name=r.name
+                 WHERE ur.user_id=u.id
+               ),'[]'::jsonb) AS assigned_roles
+               FROM c_users u WHERE u.id=%s AND u.enabled""",
+            (user_id,),
+        ).fetchone()
         if not user:
             raise ServiceError(401, "INVALID_SESSION", "身份已失效")
-        roles = conn.execute(
-            """SELECT r.name, r.permissions FROM c_roles r
-               JOIN c_user_roles ur ON ur.role_name=r.name WHERE ur.user_id=%s""",
-            (user_id,),
-        ).fetchall()
+        roles = user["assigned_roles"]
         return Principal(
             user_id,
             user["department_id"],
@@ -110,6 +116,22 @@ class AuthService:
                     )
                 except (VerificationError, InvalidHashError):
                     valid = False
+                if user and user["enabled"] and valid:
+                    # Argon2 runs without an account row lock. A concurrent
+                    # disable/credential change must invalidate that old result.
+                    # Keep this short shared lock through session+audit commit;
+                    # account management takes FOR UPDATE before revoking sessions.
+                    current = conn.execute(
+                        "SELECT enabled,password_hash FROM c_users WHERE id=%s FOR SHARE",
+                        (user["id"],),
+                    ).fetchone()
+                    valid = bool(
+                        current
+                        and current["enabled"]
+                        and secrets.compare_digest(
+                            current["password_hash"].encode(), user["password_hash"].encode()
+                        )
+                    )
                 if not user or not user["enabled"] or not valid:
                     failure = ServiceError(401, "INVALID_CREDENTIALS", "账号或密码错误")
                 else:

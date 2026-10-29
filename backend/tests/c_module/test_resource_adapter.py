@@ -46,6 +46,19 @@ def test_resource_permissions_and_creation_policy_are_explicit():
         read="synthetic.read", manage="synthetic.manage", create_rooms="synthetic.create"
     )
     assert ResourceManagementConfiguration(permissions=permissions).new_room is None
+    assert ResourceManagementConfiguration(permissions=permissions).room_options_permission is None
+    assert (
+        ResourceManagementConfiguration(
+            permissions=permissions, room_options_permission="m2.submit"
+        ).room_options_permission
+        == "m2.submit"
+    )
+    with pytest.raises(ValidationError):
+        ResourceManagementConfiguration(permissions=permissions, room_options_permission=" ")
+    with pytest.raises(ValidationError):
+        ResourceManagementConfiguration(
+            permissions=permissions, room_options_permission="synthetic.read"
+        )
     with pytest.raises(ValidationError):
         ResourcePermissions(read="synthetic read", manage="manage", create_rooms="create")
     with pytest.raises(ValidationError):
