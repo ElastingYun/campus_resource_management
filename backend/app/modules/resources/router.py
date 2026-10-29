@@ -6,6 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy.orm import Session
 
+from app.modules.resources.catalog import (
+    RoomOptionsActor,
+    RoomOptionsPage,
+    get_room_options_actor,
+    list_room_options,
+)
 from app.modules.resources.contracts import (
     AuditSink,
     NewRoomSettings,
@@ -53,6 +59,7 @@ def get_resource_request_id(request: Request) -> str | None:
 def create_resources_router(
     *,
     actor_dependency: Callable = get_resource_actor,
+    room_options_actor_dependency: Callable = get_room_options_actor,
     session_dependency: Callable = get_resource_session,
     new_room_settings: NewRoomSettings | None = None,
     audit_sink: AuditSink | None = None,
@@ -68,6 +75,16 @@ def create_resources_router(
         return ResourceService(session, actor, new_room_settings, audit_sink, request_id)
 
     Service = Annotated[ResourceService, Depends(service)]
+
+    @router.get("/room-options", response_model=RoomOptionsPage)
+    def room_options(
+        actor: Annotated[RoomOptionsActor, Depends(room_options_actor_dependency)],
+        session: Annotated[Session, Depends(session_dependency)],
+        q: Search = "",
+        limit: Limit = 20,
+        offset: Offset = 0,
+    ):
+        return safe_read(lambda: list_room_options(session, actor, q.strip(), limit, offset))
 
     @router.get("/rooms", response_model=RoomPage)
     def list_rooms(

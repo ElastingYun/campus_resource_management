@@ -6,6 +6,18 @@ import { createUnconfiguredBookingGateway } from "../booking/gateway";
 import { createPrototypeBookingGateway } from "../booking/prototype";
 import { BookingError, selectBooking } from "../booking/models";
 import type { BookingGateway } from "../booking/models";
+import type { BookingSession } from "../booking/session";
+import type { ReservationReceipt } from "../booking/models";
+import MyReservations from "../records/MyReservations.vue";
+import { createCheckinSession } from "../records/checkin";
+import type { CheckinSession } from "../records/checkin";
+import { createPrototypeRecordsGateway } from "../records/prototype";
+import { createUnconfiguredRecordsGateway } from "../records/gateway";
+import type { RecordsGateway } from "../records/models";
+import OperationsWorkspace from "../operations/OperationsWorkspace.vue";
+import type { OperationsGateway } from "../operations/models";
+import { createPrototypeOperationsGateway } from "../operations/prototype";
+import { createUnconfiguredOperationsGateway } from "../operations/gateway";
 import {
   businessDate,
   outletLabels,
@@ -24,25 +36,72 @@ import type {
 const props = defineProps<{
   gateway: SeatSearchGateway;
   bookingGateway?: BookingGateway;
+  bookingSession?: BookingSession;
+  recordsGateway?: RecordsGateway;
+  checkinSession?: CheckinSession;
+  operationsGateway?: OperationsGateway;
 }>();
 const emit = defineEmits<{ bookingPending: [pending: boolean] }>();
+const demoReceipts = new Map<string, ReservationReceipt>();
+const tab = ref("search");
+const operationsGateway =
+  props.operationsGateway?.mode === props.gateway.mode
+    ? props.operationsGateway
+    : !props.operationsGateway && props.gateway.mode === "prototype"
+      ? createPrototypeOperationsGateway()
+      : createUnconfiguredOperationsGateway();
 const requestedBooking =
   props.bookingGateway ??
   (props.gateway.mode === "prototype"
-    ? createPrototypeBookingGateway()
+    ? createPrototypeBookingGateway(demoReceipts)
     : createUnconfiguredBookingGateway());
+const retainedSession =
+  props.bookingSession?.mode === props.gateway.mode
+    ? props.bookingSession
+    : undefined;
 const bookingGateway =
-  requestedBooking.mode === props.gateway.mode
+  !props.bookingSession &&
+  requestedBooking.mode === "prototype" &&
+  props.gateway.mode === "prototype"
     ? requestedBooking
     : createUnconfiguredBookingGateway();
-const booking = createBookingFlow(bookingGateway);
+const bookingMode = retainedSession?.mode ?? bookingGateway.mode;
+const localBooking = createBookingFlow(bookingGateway);
+const booking = computed(() => retainedSession?.current ?? localBooking);
+const recordsGateway =
+  props.recordsGateway?.mode === props.gateway.mode
+    ? props.recordsGateway
+    : !props.bookingSession &&
+        !props.bookingGateway &&
+        !props.recordsGateway &&
+        props.gateway.mode === "prototype"
+      ? createPrototypeRecordsGateway(demoReceipts)
+      : createUnconfiguredRecordsGateway();
+const retainedCheckin =
+  props.checkinSession?.mode === recordsGateway.mode
+    ? props.checkinSession
+    : undefined;
+const checkinSession =
+  retainedCheckin ??
+  (recordsGateway.mode === "prototype"
+    ? createCheckinSession(recordsGateway)
+    : undefined);
+const pending = computed(
+  () =>
+    (retainedSession?.pending ?? booking.value.pending) ||
+    (checkinSession?.pending ?? false),
+);
 watch(
-  () => booking.pending,
+  () => pending.value,
   (pending) => emit("bookingPending", pending),
   { immediate: true, flush: "sync" },
 );
 const leavingWarning = ref(false);
-const canBook = bookingGateway.mode !== "unconfigured";
+const canBook = computed(
+  () =>
+    bookingMode !== "unconfigured" &&
+    (!retainedSession || retainedSession.current !== null),
+);
 const settings = ref<SearchSettings>();
 const loadingSettings = ref(false),
   searching = ref(false),
@@ -71,7 +130,7 @@ const disabled = computed(
     props.gateway.mode === "unconfigured" ||
     !settings.value ||
     loadingSettings.value ||
-    booking.active,
+    booking.value.active,
 );
 const availableCount = computed(
   () =>
@@ -79,7 +138,7 @@ const availableCount = computed(
     0,
 );
 function invalidate() {
-  if (booking.active) return;
+  if (booking.value.active) return;
   generation++;
   searchController?.abort();
   searching.value = false;
@@ -87,9 +146,9 @@ function invalidate() {
   error.value = "";
 }
 function chooseSeat(seat: SearchSeat) {
-  if (!result.value || booking.active || !canBook) return;
+  if (!result.value || booking.value.active || !canBook.value) return;
   try {
-    if (!booking.open(selectBooking(seat, result.value)))
+    if (!booking.value.open(selectBooking(seat, result.value)))
       error.value = "请先登录后预约。";
   } catch (cause) {
     error.value =
@@ -97,16 +156,21 @@ function chooseSeat(seat: SearchSeat) {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (booking.pending) {
+  if (pending.value) {
     event.preventDefault();
     event.returnValue = "";
   }
 }
 function guardNavigation(event: MouseEvent) {
   if (
-    booking.pending &&
+    pending.value &&
     event.target instanceof Element &&
-    event.target.closest("a[href]")
+    event.target.closest("a[href]") &&
+    !(
+      (!booking.value.pending || retainedSession) &&
+      (!checkinSession?.pending || retainedCheckin) &&
+      event.target.closest("a[href]")!.getAttribute("href")?.startsWith("#")
+    )
   ) {
     event.preventDefault();
     leavingWarning.value = true;
@@ -193,13 +257,31 @@ function formatTime(value: string) {
     timeZoneName: "shortOffset",
   }).format(new Date(value));
 }
+watch(
+  () => retainedSession?.currentActorId,
+  (actor) => {
+    generation++;
+    settingsGeneration++;
+    searchController?.abort();
+    settingsController?.abort();
+    searching.value = false;
+    loadingSettings.value = false;
+    result.value = undefined;
+    rooms.value = [];
+    settings.value = undefined;
+    error.value = "";
+    if (actor) void loadSettings();
+  },
+  { flush: "sync" },
+);
 onMounted(() => {
   window.addEventListener("beforeunload", beforeUnload);
   if (props.gateway.mode !== "unconfigured") void loadSettings();
 });
 onUnmounted(() => {
   window.removeEventListener("beforeunload", beforeUnload);
-  booking.dispose();
+  // The application-owned session, including requests in flight, survives route destruction.
+  localBooking.dispose();
   generation++;
   settingsGeneration++;
   searchController?.abort();
@@ -236,194 +318,219 @@ onUnmounted(() => {
         >查看合成演示</a
       >
     </aside>
-    <form
-      class="search-form"
-      novalidate
-      @submit.prevent="search"
-      @input="invalidate"
-      @change="invalidate"
-    >
-      <div class="form-heading">
-        <h2>查询条件</h2>
-        <span v-if="gateway.businessTimeZone"
-          >业务时区：{{ gateway.businessTimeZone }}</span
-        >
-      </div>
-      <fieldset :disabled="disabled">
-        <div class="search-fields">
-          <label for="search-date"
-            >日期<input
-              id="search-date"
-              v-model="query.date"
-              type="date"
-              required
-          /></label>
-          <label for="search-hour"
-            >开始整点<select id="search-hour" v-model.number="query.hour">
-              <option v-for="hour in 24" :key="hour" :value="hour - 1">
-                {{ String(hour - 1).padStart(2, "0") }}:00
-              </option>
-            </select></label
-          >
-          <label for="search-hours"
-            >时长（小时）<input
-              id="search-hours"
-              v-model.number="query.hours"
-              type="number"
-              min="1"
-              :max="settings?.maxHours"
-              step="1"
-              required
-          /></label>
-          <label for="search-outlet"
-            >插座<select id="search-outlet" v-model="query.outlet">
-              <option value="">不限插座</option>
-              <option
-                v-for="(label, value) in outletLabels"
-                :key="value"
-                :value="value"
-              >
-                {{ label }}
-              </option>
-            </select></label
-          >
-          <label for="search-room"
-            >教室<select id="search-room" v-model="query.roomId">
-              <option value="">全部查询结果中的教室</option>
-              <option v-for="room in rooms" :key="room.id" :value="room.id">
-                {{ room.label }}
-              </option>
-            </select></label
-          >
-        </div>
-        <div class="search-actions">
-          <label class="checkbox"
-            ><input
-              v-model="query.onlyAvailable"
-              type="checkbox"
-            />仅看可用座位</label
-          ><button type="submit" :disabled="disabled || searching">
-            {{ searching ? "查询中…" : "查询座位" }}
-          </button>
-        </div>
-      </fieldset>
-      <p v-if="settings" class="search-hint">
-        {{
-          gateway.mode === "prototype" ? "演示规则" : "服务当前规则"
-        }}：单次最多 {{ settings.maxHours }} 小时，可预约
-        {{ settings.bookingHorizonDays }}
-        天内时段。日期、开放时间及准入由服务端最终校验。
-      </p>
-      <p class="search-hint">
-        先查询全部教室，再按返回的教室筛选。查询结果仅代表该次响应，预约提交时需重新校验。
-      </p>
-    </form>
-    <BookingPanel
-      v-if="gateway.businessTimeZone"
-      :flow="booking"
-      :time-zone="gateway.businessTimeZone"
-      :prototype="bookingGateway.mode === 'prototype'"
-      @closed="closeBooking"
-    />
-    <p
-      v-if="leavingWarning && booking.pending"
-      class="search-error"
-      role="alert"
-    >
-      请先核对原预约结果，再离开当前页面。
-    </p>
-    <div v-if="loadingSettings" class="search-state" role="status">
-      正在读取预约规则…
-    </div>
-    <div v-if="error" class="search-error" role="alert">
-      <p>{{ error }}</p>
-      <button
-        v-if="!settings && gateway.mode !== 'unconfigured'"
-        :disabled="loadingSettings"
-        @click="loadSettings"
-      >
-        重新读取规则
+    <nav class="workspace-tabs" aria-label="自习座位功能">
+      <button :aria-pressed="tab === 'search'" @click="tab = 'search'">
+        座位查询
       </button>
-    </div>
-    <div v-if="searching" class="search-state" role="status">
-      正在查询座位… <button @click="invalidate">取消查询</button>
-    </div>
-    <section
-      v-else-if="result"
-      class="search-results"
-      aria-labelledby="search-result-title"
-    >
-      <div class="result-heading">
-        <div>
-          <h2 id="search-result-title">
-            {{ result.seats.length }} 个座位 · {{ availableCount }} 个可用
-          </h2>
-          <p>
-            {{ formatTime(result.startAt) }} → {{ formatTime(result.endAt) }} ·
-            {{ result.hours }} 小时
-          </p>
-        </div>
-        <span>{{
-          canBook
-            ? bookingGateway.mode === "prototype"
-              ? "合成预约演示"
-              : "选择可用座位继续预约"
-            : "仅查询 · 预约提交待接入"
-        }}</span>
-      </div>
-      <p v-if="result.seats.length === 0" class="search-state" role="status">
-        没有符合条件的座位，请调整时间、教室或插座条件。
-      </p>
-      <div v-else class="seat-cards">
-        <article
-          v-for="seat in result.seats"
-          :key="seat.id"
-          class="seat-card"
-          :data-status="seat.status"
-        >
-          <div class="seat-card-top">
-            <span>{{ seat.roomCode }}</span
-            ><strong class="seat-status">{{
-              seat.status === "available"
-                ? "可用"
-                : seat.status === "unavailable"
-                  ? "不可用"
-                  : "状态未知"
-            }}</strong>
-          </div>
-          <h3>{{ seat.code }} <small>号座位</small></h3>
-          <p>{{ seat.roomName }}</p>
-          <p class="outlet">{{ outletLabels[seat.outlet] }}</p>
-          <ul v-if="seat.reasons.length">
-            <li v-for="reason in seat.reasons" :key="reason">
-              {{ reasonLabel(reason) }}
-            </li>
-          </ul>
-          <p v-if="seat.status === 'unknown'" class="unknown-note">
-            可用性未确认，不能据此预约。
-          </p>
-          <button
-            :disabled="
-              seat.status !== 'available' || !canBook || booking.active
-            "
-            :aria-label="`预约 ${seat.roomCode} ${seat.code} 号座位`"
-            @click="chooseSeat(seat)"
+      <button :aria-pressed="tab === 'records'" @click="tab = 'records'">
+        我的预约与签到
+      </button>
+      <button :aria-pressed="tab === 'operations'" @click="tab = 'operations'">
+        运营与教室终端
+      </button>
+    </nav>
+    <MyReservations
+      v-if="tab === 'records'"
+      :gateway="recordsGateway"
+      :checkin-session="checkinSession"
+      :business-time-zone="gateway.businessTimeZone ?? undefined"
+    />
+    <OperationsWorkspace
+      v-if="tab === 'operations'"
+      :gateway="operationsGateway"
+      :business-time-zone="gateway.businessTimeZone ?? undefined"
+    />
+    <div v-show="tab === 'search'">
+      <form
+        class="search-form"
+        novalidate
+        @submit.prevent="search"
+        @input="invalidate"
+        @change="invalidate"
+      >
+        <div class="form-heading">
+          <h2>查询条件</h2>
+          <span v-if="gateway.businessTimeZone"
+            >业务时区：{{ gateway.businessTimeZone }}</span
           >
-            选择此座位
-          </button>
-        </article>
+        </div>
+        <fieldset :disabled="disabled">
+          <div class="search-fields">
+            <label for="search-date"
+              >日期<input
+                id="search-date"
+                v-model="query.date"
+                type="date"
+                required
+            /></label>
+            <label for="search-hour"
+              >开始整点<select id="search-hour" v-model.number="query.hour">
+                <option v-for="hour in 24" :key="hour" :value="hour - 1">
+                  {{ String(hour - 1).padStart(2, "0") }}:00
+                </option>
+              </select></label
+            >
+            <label for="search-hours"
+              >时长（小时）<input
+                id="search-hours"
+                v-model.number="query.hours"
+                type="number"
+                min="1"
+                :max="settings?.maxHours"
+                step="1"
+                required
+            /></label>
+            <label for="search-outlet"
+              >插座<select id="search-outlet" v-model="query.outlet">
+                <option value="">不限插座</option>
+                <option
+                  v-for="(label, value) in outletLabels"
+                  :key="value"
+                  :value="value"
+                >
+                  {{ label }}
+                </option>
+              </select></label
+            >
+            <label for="search-room"
+              >教室<select id="search-room" v-model="query.roomId">
+                <option value="">全部查询结果中的教室</option>
+                <option v-for="room in rooms" :key="room.id" :value="room.id">
+                  {{ room.label }}
+                </option>
+              </select></label
+            >
+          </div>
+          <div class="search-actions">
+            <label class="checkbox"
+              ><input
+                v-model="query.onlyAvailable"
+                type="checkbox"
+              />仅看可用座位</label
+            ><button type="submit" :disabled="disabled || searching">
+              {{ searching ? "查询中…" : "查询座位" }}
+            </button>
+          </div>
+        </fieldset>
+        <p v-if="settings" class="search-hint">
+          {{
+            gateway.mode === "prototype" ? "演示规则" : "服务当前规则"
+          }}：单次最多 {{ settings.maxHours }} 小时，可预约
+          {{ settings.bookingHorizonDays }}
+          天内时段。日期、开放时间及准入由服务端最终校验。
+        </p>
+        <p class="search-hint">
+          先查询全部教室，再按返回的教室筛选。查询结果仅代表该次响应，预约提交时需重新校验。
+        </p>
+      </form>
+      <BookingPanel
+        v-if="gateway.businessTimeZone"
+        :flow="booking"
+        :time-zone="gateway.businessTimeZone"
+        :prototype="bookingMode === 'prototype'"
+        :retained="!!retainedSession"
+        @closed="closeBooking"
+      />
+      <p
+        v-if="leavingWarning && booking.pending"
+        class="search-error"
+        role="alert"
+      >
+        请先核对原预约结果，再离开当前页面。
+      </p>
+      <div v-if="loadingSettings" class="search-state" role="status">
+        正在读取预约规则…
       </div>
-    </section>
-    <div
-      v-else-if="
-        !searching &&
-        !loadingSettings &&
-        !error &&
-        gateway.mode !== 'unconfigured'
-      "
-      class="search-state"
-    >
-      选择条件后点击“查询座位”。
+      <div v-if="error" class="search-error" role="alert">
+        <p>{{ error }}</p>
+        <button
+          v-if="!settings && gateway.mode !== 'unconfigured'"
+          :disabled="loadingSettings"
+          @click="loadSettings"
+        >
+          重新读取规则
+        </button>
+      </div>
+      <div v-if="searching" class="search-state" role="status">
+        正在查询座位… <button @click="invalidate">取消查询</button>
+      </div>
+      <section
+        v-else-if="result"
+        class="search-results"
+        aria-labelledby="search-result-title"
+      >
+        <div class="result-heading">
+          <div>
+            <h2 id="search-result-title">
+              {{ result.seats.length }} 个座位 · {{ availableCount }} 个可用
+            </h2>
+            <p>
+              {{ formatTime(result.startAt) }} →
+              {{ formatTime(result.endAt) }} · {{ result.hours }} 小时
+            </p>
+          </div>
+          <span>{{
+            canBook
+              ? bookingMode === "prototype"
+                ? "合成预约演示"
+                : "选择可用座位继续预约"
+              : "仅查询 · 预约提交待接入"
+          }}</span>
+        </div>
+        <p v-if="result.seats.length === 0" class="search-state" role="status">
+          没有符合条件的座位，请调整时间、教室或插座条件。
+        </p>
+        <div v-else class="seat-cards">
+          <article
+            v-for="seat in result.seats"
+            :key="seat.id"
+            class="seat-card"
+            :data-status="seat.status"
+          >
+            <div class="seat-card-top">
+              <span>{{ seat.roomCode }}</span
+              ><strong class="seat-status">{{
+                seat.status === "available"
+                  ? "可用"
+                  : seat.status === "unavailable"
+                    ? "不可用"
+                    : "状态未知"
+              }}</strong>
+            </div>
+            <h3>{{ seat.code }} <small>号座位</small></h3>
+            <p>{{ seat.roomName }}</p>
+            <p class="outlet">{{ outletLabels[seat.outlet] }}</p>
+            <ul v-if="seat.reasons.length">
+              <li v-for="reason in seat.reasons" :key="reason">
+                {{ reasonLabel(reason) }}
+              </li>
+            </ul>
+            <p v-if="seat.status === 'unknown'" class="unknown-note">
+              可用性未确认，不能据此预约。
+            </p>
+            <button
+              :disabled="
+                seat.status !== 'available' || !canBook || booking.active
+              "
+              :aria-label="`预约 ${seat.roomCode} ${seat.code} 号座位`"
+              @click="chooseSeat(seat)"
+            >
+              选择此座位
+            </button>
+          </article>
+        </div>
+      </section>
+      <div
+        v-else-if="
+          !searching &&
+          !loadingSettings &&
+          !error &&
+          gateway.mode !== 'unconfigured'
+        "
+        class="search-state"
+      >
+        选择条件后点击“查询座位”。
+      </div>
     </div>
   </main>
 </template>
@@ -433,6 +540,16 @@ onUnmounted(() => {
   max-width: 1160px;
   margin: 0 auto;
   padding: 36px 24px 64px;
+}
+.workspace-tabs {
+  display: flex;
+  gap: 12px;
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+.workspace-tabs button[aria-pressed="false"] {
+  color: #245b42;
+  background: white;
 }
 .search-heading,
 .form-heading,

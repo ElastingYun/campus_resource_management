@@ -15,6 +15,9 @@ export function createResourceSession(
   identity: {
     currentActorId(): string | null;
     canManage(): boolean;
+    canCreateRooms?(): boolean;
+    /** Changes on trusted token, permission or scope replacement. Never a token. */
+    contextVersion?(): unknown;
   },
 ) {
   const mode = gateway.mode;
@@ -30,6 +33,16 @@ export function createResourceSession(
     try {
       return (
         mode !== "unconfigured" && !!actor() && identity.canManage() === true
+      );
+    } catch {
+      return false;
+    }
+  };
+  const canCreateRooms = () => {
+    try {
+      return (
+        canManage() &&
+        (identity.canCreateRooms?.() ?? mode === "prototype") === true
       );
     } catch {
       return false;
@@ -60,7 +73,13 @@ export function createResourceSession(
         return pending();
       },
       open(kind: "room" | "seat", item?: Room | Seat, roomId?: string) {
-        if (pending() || state.form || actor() !== owner || !canManage())
+        if (
+          pending() ||
+          state.form ||
+          actor() !== owner ||
+          !canManage() ||
+          (kind === "room" && !item && !canCreateRooms())
+        )
           return false;
         state.notice = "";
         state.saveError = "";
@@ -84,7 +103,13 @@ export function createResourceSession(
         return true;
       },
       async save() {
-        if (!state.form || pending() || actor() !== owner || !canManage())
+        if (
+          !state.form ||
+          pending() ||
+          actor() !== owner ||
+          !canManage() ||
+          (state.form.kind === "room" && !state.form.id && !canCreateRooms())
+        )
           return;
         const form = Object.freeze({ ...state.form }),
           draft = Object.freeze({ ...state.draft });
@@ -180,6 +205,12 @@ export function createResourceSession(
     },
     get canManage() {
       return canManage();
+    },
+    get canCreateRooms() {
+      return canCreateRooms();
+    },
+    get contextVersion() {
+      return identity.contextVersion?.() ?? actor();
     },
     get current() {
       const id = actor();
