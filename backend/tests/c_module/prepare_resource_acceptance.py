@@ -1,4 +1,4 @@
-"""Build a disposable C+B test workspace from the current C tree and pinned B v2."""
+"""Test committed integrated B sources, or the fixed external B v2 before integration."""
 
 import argparse
 import hashlib
@@ -43,6 +43,28 @@ def prepare(source: Path, output: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, destination)
         manifest["sha256"][name] = hashlib.sha256(destination.read_bytes()).hexdigest()
+    if (output / B_PATHS[0] / "__init__.py").is_file():
+        revision = manifest["c_revision"]
+        names = git(root, "ls-tree", "-r", "--name-only", revision, "--", *B_PATHS)
+        committed = set(names.decode().splitlines())
+        projected = {
+            str(path.relative_to(output))
+            for prefix in B_PATHS
+            for path in (output / prefix).rglob("*")
+            if path.is_file()
+        }
+        if not committed or projected != committed:
+            raise ValueError("Integrated B sources must be complete committed files")
+        for name in committed:
+            if (output / name).read_bytes() != git(root, "show", revision + ":" + name):
+                raise ValueError("Integrated B bytes differ from the committed revision")
+        manifest["b_revision"] = revision
+        manifest["b_source"] = "integrated_commit"
+        (output / "acceptance-source-manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n"
+        )
+        print("Prepared actual committed C/B sources; no installed B file was overwritten")
+        return
     for prefix in B_PATHS:
         existing = (output / prefix).exists()
         names = (
