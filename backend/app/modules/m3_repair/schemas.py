@@ -62,3 +62,17 @@ class AssignmentOut(BaseModel):
     status: str
     version: int
     occurred_at: datetime
+
+
+class WorkStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    expected_version: int = Field(ge=0)
+
+
+class WorkStartOut(BaseModel):
+    ticket_id: str
+    assignee_id: str
+    status: str
+    version: int
+    occurred_at: datetime
