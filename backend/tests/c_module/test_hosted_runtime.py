@@ -92,6 +92,7 @@ def test_shared_pool_preserves_sqlalchemy_rows_and_restarts_lifecycle(case, tmp_
             with engine.connect() as conn:
                 assert conn.execute(text("SELECT count(*) FROM c_users")).scalar_one() == 4
             assert client.get("/health/ready").status_code == 200
+            assert client.get("/api/v1/m1/settings").status_code == 401
         assert engine.pool.checkedout() == 0
         assert application.state.c_runtime.resources.client.is_closed
 
@@ -180,10 +181,10 @@ def test_alembic_empty_or_legacy_baseline_replays_without_losing_data(empty_data
         config = alembic_config()
         with engine.begin() as conn:
             config.attributes["connection"] = conn
-            command.upgrade(config, "head")
+            command.upgrade(config, "0002_c_identity_approval")
         with engine.begin() as conn:
             config.attributes["connection"] = conn
-            command.upgrade(config, "head")
+            command.upgrade(config, "0002_c_identity_approval")
             assert (
                 conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
                 == "0002_c_identity_approval"
@@ -205,7 +206,7 @@ def test_alembic_rejects_inconsistent_legacy_schema(database):
             with engine.begin() as conn:
                 config = alembic_config()
                 config.attributes["connection"] = conn
-                command.upgrade(config, "head")
+                command.upgrade(config, "0002_c_identity_approval")
     finally:
         engine.dispose()
 
@@ -219,7 +220,7 @@ def test_alembic_rejects_legacy_checksum_without_overwriting_users(case):
             with engine.begin() as conn:
                 config = alembic_config()
                 config.attributes["connection"] = conn
-                command.upgrade(config, "head")
+                command.upgrade(config, "0002_c_identity_approval")
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM c_users")).scalar_one() == 4
             assert (
