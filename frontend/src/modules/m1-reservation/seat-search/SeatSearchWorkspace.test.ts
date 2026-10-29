@@ -42,7 +42,7 @@ describe("B student seat search", () => {
     expect(wrapper.text()).toContain("整教室审批占用");
     expect(wrapper.text()).toContain("教室维修中");
     expect(wrapper.text()).toContain("状态未知");
-    expect(wrapper.text()).toContain("预约提交待接入");
+    expect(wrapper.text()).toContain("合成预约演示");
     expect(wrapper.text()).not.toContain("future_status");
   });
   it("passes the chosen whole-hour slot and outlet without inventing policy", async () => {

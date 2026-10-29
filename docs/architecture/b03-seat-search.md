@@ -1,6 +1,7 @@
 # B-03 学生座位查询：实现与接入说明
 
 负责人 B / hrzhao7。关联 [Issue #21](https://github.com/ElastingYun/campus_resource_management/issues/21)，覆盖 B-UI-01。基线为 D 集成分支 `85d71ede`（含 B-02 PR #20）；本轮只读，不创建预约，不变更数据库、认证、业务规则或依赖。
+后续预约确认与恢复增量见 [B-04](b04-seat-booking.md)；本文记录 B-03 原始只读交付范围，真实模式仍需显式接入。
 
 ## 页面与边界
 
