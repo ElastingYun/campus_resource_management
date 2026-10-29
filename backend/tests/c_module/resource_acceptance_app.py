@@ -56,6 +56,9 @@ def build():
                 manage="synthetic.resource.manage",
                 create_rooms="synthetic.resource.create",
             ),
+            room_options_permission="m2.submit"
+            if os.environ.get("C24_TEST_ROOM_OPTIONS") == "1"
+            else None,
             new_room=NewRoomPolicy(
                 open_time=time(8),
                 close_time=time(22),
