@@ -1,6 +1,19 @@
 # F 的跨模块集成跟踪表
 
-## 当前恢复快照（2026-10-29）
+## 首次定时轮次增量（2026-10-29 17:22 起，Asia/Shanghai）
+
+heartbeat `f-github` 于 `2026-10-29T09:22:53.584Z` 实际触发，取得独占锁后读取远端并比较已保存指纹。此轮查到 34 个开放 Issue、16 个开放 PR；列表均少于 100 条。对上轮 25 个 PR 逐一核实关闭/合并状态，对当前 16 个开放 PR 读取正式 Review 和当前 head 的 PR 工作流，均返回 completed/success。下方恢复快照是前一轮历史，当前增量以本节为准。
+
+- main 已更新为 `3b5898b1c4c8c091082db0b361fd2163afcaa07a`：[E #53](https://github.com/ElastingYun/campus_resource_management/pull/53) 的契约草案已合入 main，**合并草案不代表待决业务政策已批准**。E #62/#69/#74 的实现仍未进入 main。
+- B #30/#32/#46/#48/#50/#52/#70 及 D #67 已显示 merged，但目标是各自开发分支。`git merge-base --is-ancestor` 实测：D #15 当前包含 #30/#52 的源提交，不包含 #32/#46/#48/#50/#70 的源提交。原因是部分父 PR 先合并、子 PR 后合入原开发分支；不能凭连续 merged 标签推断增量已逐级传播。#48 进入 B 审计分支，#67 进入 D #64；均不能登记为主线交付。
+- D [#15](https://github.com/ElastingYun/campus_resource_management/pull/15) head 为 `718620156a831c6258127d17dc9551c0d03fbf25`，已在其自身分支合入 main；当前 [工程运行 40849052111](https://github.com/ElastingYun/campus_resource_management/actions/runs/40849052111) 成功。F 尚未收到 #15/#76 的基线/共享会话确认，不自行修改 App 或改选业务政策。
+- D [#64](https://github.com/ElastingYun/campus_resource_management/pull/64) head 为 `f7ec6fa9370316bea266a2d8f19f5f5218b3f073`，包含 #67 文档；[工程 40848696982](https://github.com/ElastingYun/campus_resource_management/actions/runs/40848696982) 和 [网络/浏览器 40848697022](https://github.com/ElastingYun/campus_resource_management/actions/runs/40848697022) 成功。Wuyh11 有两条 APPROVED，正文说明负责人授权与 AI 辅助；F 仅记录 GitHub 状态，不替团队认定人工课程验收已完成。
+- C #22 的 GitHub `mergeable=false`，head 仍为 `a7cfdf0`；F 没有执行合并、解决冲突或选择策略。工程整合由相关 owner 处理，不扩张 F 的修改范围。
+- F [#77](https://github.com/ElastingYun/campus_resource_management/pull/77) 在本轮开始时仍为 `87a6796`，工程运行 [40848830238](https://github.com/ElastingYun/campus_resource_management/actions/runs/40848830238) 成功；D/E 尚无正式 Review。#76/#69/#15 未收到新的 owner 回复，原问题只读回查、不重复发布。
+
+本轮仅更新 F 文档、运行日志与事件指纹，业务/迁移/浏览器/M3 网络测试 **NOT RUN**；他人工作流成功不冒充 F 本机复测。单轮锁、没有变化的已见评论去重和持久状态写入属于调度运行验证，不证明失效账号或所有故障注入场景均已端到端验收。
+
+## 首次手动恢复快照（历史，2026-10-29）
 
 首轮恢复直接读取 GitHub：32 个开放 Issue、24 个开放 PR；100 条上限未触及，分支游标读取到空页结束。逐项获取 PR base/head、正式 Review 及当前 head 的 PR 触发工作流。24 个 head 返回的工作流均 completed/success；接口只返回 PR 触发运行的第一页，不能声称覆盖全部 push 历史、全部 Checks 或完整集成。
 
