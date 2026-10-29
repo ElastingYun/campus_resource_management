@@ -102,15 +102,15 @@ export async function requestJson(
         if (
           typeof payload === "object" &&
           payload !== null &&
-          "error" in payload
+          ("error" in payload || "detail" in payload)
         ) {
-          const detail = payload.error;
+          const detail = "error" in payload ? payload.error : payload.detail;
           if (
             typeof detail === "object" &&
             detail !== null &&
             "code" in detail &&
             typeof detail.code === "string" &&
-            /^[A-Z0-9_]{1,80}$/.test(detail.code)
+            /^[A-Za-z0-9_]{1,80}$/.test(detail.code)
           )
             serverCode = detail.code;
         }

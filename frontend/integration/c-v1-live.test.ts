@@ -16,10 +16,8 @@ test.skipIf(!origin)(
   "real C-v1 HTTP and PostgreSQL: authentication, response-loss recovery, decisions and persistent query",
   async () => {
     const password = env.CAMPUS_BOOTSTRAP_PASSWORD;
-    const resourceOrigin = env.CAMPUS_M2_RESOURCE_FIXTURE_ORIGIN;
-    const resourceToken = env.CAMPUS_RESOURCES_SERVICE_TOKEN;
-    if (!password || !resourceOrigin || !resourceToken)
-      throw new Error("Explicit synthetic CI configuration is required");
+    if (!password)
+      throw new Error("Explicit synthetic CI password is required");
     let dropFirstSubmission = true;
     const discardedResponses: { status: number; id: unknown }[] = [];
     const submissions: { key: string | null; body: string }[] = [];
@@ -50,33 +48,28 @@ test.skipIf(!origin)(
     const student = createCSession();
     await student.login("m2-live-student", password);
     expect(student.state.value?.identity.permissions).toContain("m2.submit");
-    const productionDefault = createCGateway(student);
-    const notIntegrated = await productionDefault.load();
-    expect(notIntegrated.canSubmit).toBe(false);
-    expect(notIntegrated.roomWarning).toBeTruthy();
-
-    // Explicit test-only room directory. This does not assert real B authorization or eligibility.
-    const loadRooms = async () => {
-      const response = await nativeFetch(
-        new URL("/api/v1/resources/rooms", resourceOrigin),
-        { headers: { Authorization: `Bearer ${resourceToken}` } },
-      );
-      expect(response.status).toBe(200);
-      const data = (await response.json()) as {
-        items: { id: string; name: string; location: string }[];
-      };
-      return data.items.map((room) => ({
-        id: room.id,
-        name: room.name,
-        location: room.location,
-      }));
-    };
-    const gateway = createCGateway(student, { loadRooms });
+    const gateway = createCGateway(student);
     expect((await gateway.load()).canSubmit).toBe(true);
+    expect((await gateway.roomOptions!()).total).toBe(121);
+    expect((await gateway.roomOptions!({ q: "OTHER" })).items).toEqual([]);
+    expect((await gateway.roomOptions!({ q: "DISABLED" })).items).toEqual([]);
+    const finalPage = await gateway.roomOptions!({ offset: 120 });
+    expect(finalPage.total).toBe(121);
+    expect(finalPage.items).toHaveLength(1);
+    expect(finalPage.items[0]?.id).toBe("9007199254740993");
+    const management = await nativeFetch(
+      new URL("/api/v1/resources/rooms", origin),
+      {
+        headers: {
+          Authorization: `Bearer ${student.state.value!.accessToken}`,
+        },
+      },
+    );
+    expect(management.status).toBe(403);
     const starts = new Date(Date.now() + 86400000),
       ends = new Date(starts.getTime() + 3600000);
     const draft = {
-      roomId: "1",
+      roomId: "9007199254740993",
       purpose: `Synthetic D-C network ${crypto.randomUUID()}`,
       startsAt: starts.toISOString(),
       endsAt: ends.toISOString(),

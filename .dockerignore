@@ -9,3 +9,6 @@
 **/.ruff_cache
 
 .contract
+
+**/test-results
+**/playwright-report
