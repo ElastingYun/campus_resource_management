@@ -1,16 +1,47 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ResourceMessage } from "./models";
+import { createResourceSession } from "./session";
+import type { ResourceSession } from "./session";
+import { createUnconfiguredResourceGateway } from "./gateway";
 import type { OutletType, ResourceGateway, Room, Seat } from "./models";
 
 const props = defineProps<{
   gateway: ResourceGateway;
   allowManage?: boolean;
+  resourceSession?: ResourceSession;
 }>();
-const canManage = computed(
-  () =>
-    props.gateway.mode === "prototype" ||
-    (props.gateway.mode === "live" && props.allowManage === true),
+const emit = defineEmits<{ resourcePending: [pending: boolean] }>();
+const retained =
+  props.resourceSession?.gateway === props.gateway
+    ? props.resourceSession
+    : undefined;
+const localGateway =
+  !props.resourceSession && props.gateway.mode === "prototype"
+    ? props.gateway
+    : createUnconfiguredResourceGateway();
+const local = createResourceSession(localGateway, {
+  currentActorId: () => "local-prototype",
+  canManage: () => localGateway.mode === "prototype",
+});
+const session = retained ?? local;
+const editing = computed(() => retained?.current ?? local.current!);
+const canManage = computed(() => session.canManage && !editing.value.pending);
+const form = computed({
+  get: () => editing.value.state.form,
+  set: (value) => {
+    if (value === null) editing.value.closeEditor();
+  },
+});
+const draft = computed(() => editing.value.state.draft);
+const saving = computed(() => editing.value.state.saving),
+  uncertain = computed(() => editing.value.state.uncertain);
+const saveError = computed(() => editing.value.state.saveError),
+  notice = computed(() => editing.value.state.notice);
+watch(
+  () => session.pending,
+  (value) => emit("resourcePending", value),
+  { immediate: true, flush: "sync" },
 );
 const roomList = ref<Room[]>([]);
 const seatList = ref<Seat[]>([]);
@@ -26,22 +57,6 @@ const roomLoading = ref(false);
 const seatLoading = ref(false);
 const roomError = ref("");
 const seatError = ref("");
-const notice = ref("");
-const saveError = ref("");
-const saving = ref(false);
-const uncertain = ref(false);
-const form = ref<{
-  kind: "room" | "seat";
-  id?: string;
-  revision?: string;
-  roomId?: string;
-} | null>(null);
-const draft = reactive({
-  code: "",
-  name: "",
-  location: "",
-  outlet_type: "none" as OutletType,
-});
 let roomRequest = 0;
 let seatRequest = 0;
 let roomController: AbortController | undefined;
@@ -63,7 +78,7 @@ async function loadRooms(reset = false) {
   roomLoading.value = true;
   roomError.value = "";
   try {
-    const result = await props.gateway.listRooms(
+    const result = await session.listRooms(
       { q: roomSearch.value.trim(), limit: 20, offset: roomOffset.value },
       roomController.signal,
     );
@@ -107,7 +122,7 @@ async function loadSeats(reset = false) {
   seatLoading.value = true;
   seatError.value = "";
   try {
-    const result = await props.gateway.listSeats(
+    const result = await session.listSeats(
       roomId,
       {
         q: seatSearch.value.trim(),
@@ -128,69 +143,67 @@ async function loadSeats(reset = false) {
   }
 }
 function openForm(kind: "room" | "seat", item?: Room | Seat) {
-  notice.value = "";
-  saveError.value = "";
-  uncertain.value = false;
-  form.value = {
-    kind,
-    id: item?.id,
-    revision: item?.revision,
-    roomId: selected.value?.id,
-  };
-  draft.code = item?.code ?? "";
-  draft.name = item && "name" in item ? item.name : "";
-  draft.location = item && "location" in item ? item.location : "";
-  draft.outlet_type = item && "outlet_type" in item ? item.outlet_type : "none";
+  editing.value.open(kind, item, selected.value?.id);
 }
 async function save() {
-  const editing = form.value;
-  if (!editing || saving.value || uncertain.value || !canManage.value) return;
-  saveError.value = "";
-  const code = draft.code.trim();
-  const name = draft.name.trim();
-  const location = draft.location.trim();
+  const flow = editing.value;
+  await flow.save();
   if (
-    !code ||
-    code.length > 32 ||
-    (editing.kind === "room" &&
-      (!name || name.length > 100 || !location || location.length > 200))
-  ) {
-    saveError.value = "请填写完整资料，并检查字段长度。";
+    disposed ||
+    flow !== editing.value ||
+    !flow.state.result ||
+    flow.state.form
+  )
     return;
-  }
-  saving.value = true;
-  try {
-    if (editing.kind === "room") {
-      const data = { code, name, location };
-      const result = editing.id
-        ? await props.gateway.updateRoom(editing.id, data, editing.revision!)
-        : await props.gateway.createRoom(data);
-      form.value = null;
-      notice.value =
-        props.gateway.mode === "prototype"
-          ? "示例教室已保存，仅在本页演示中有效。"
-          : "教室已保存。";
-      roomSearch.value = result.code;
-      await loadRooms(true);
-    } else {
-      const data = { code, outlet_type: draft.outlet_type };
-      await (editing.id
-        ? props.gateway.updateSeat(editing.id, data, editing.revision!)
-        : props.gateway.createSeat(editing.roomId!, data));
-      form.value = null;
-      notice.value =
-        props.gateway.mode === "prototype"
-          ? "示例座位已保存，仅在本页演示中有效。"
-          : "座位已保存。";
-      if (selected.value?.id === editing.roomId) await loadSeats(true);
-    }
-  } catch (error) {
-    saveError.value = message(error);
-    uncertain.value = error instanceof ResourceMessage && error.uncertain;
-  } finally {
-    saving.value = false;
+  if (flow.state.savedKind === "room") {
+    roomSearch.value = flow.state.result.code;
+    await loadRooms(true);
+  } else await loadSeats(true);
+}
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (session.pending) {
+    event.preventDefault();
+    event.returnValue = "";
   }
 }
+function guardNavigation(event: MouseEvent) {
+  const anchor =
+    event.target instanceof Element ? event.target.closest("a[href]") : null;
+  if (
+    session.pending &&
+    anchor &&
+    !(retained && anchor.getAttribute("href")?.startsWith("#"))
+  )
+    event.preventDefault();
+}
+function clearVisible() {
+  ++roomRequest;
+  ++seatRequest;
+  roomController?.abort();
+  seatController?.abort();
+  roomList.value = [];
+  seatList.value = [];
+  selected.value = null;
+  roomTotal.value = 0;
+  seatTotal.value = 0;
+  roomOffset.value = 0;
+  seatOffset.value = 0;
+  roomSearch.value = "";
+  seatSearch.value = "";
+  outlet.value = "";
+  roomLoading.value = false;
+  seatLoading.value = false;
+  roomError.value = "";
+  seatError.value = "";
+}
+watch(
+  () => [retained?.currentActorId, retained?.canManage],
+  () => {
+    clearVisible();
+    if (retained?.currentActorId) void loadRooms();
+  },
+  { flush: "sync" },
+);
 async function roomPage(step: number) {
   roomOffset.value += step * 20;
   await loadRooms();
@@ -199,16 +212,20 @@ async function seatPage(step: number) {
   seatOffset.value += step * 20;
   await loadSeats();
 }
-onMounted(() => loadRooms());
+onMounted(() => {
+  window.addEventListener("beforeunload", beforeUnload);
+  void loadRooms();
+});
 onUnmounted(() => {
   disposed = true;
+  window.removeEventListener("beforeunload", beforeUnload);
   roomController?.abort();
   seatController?.abort();
 });
 </script>
 
 <template>
-  <main class="resource-workspace">
+  <main class="resource-workspace" @click.capture="guardNavigation">
     <a class="back" href="#">← 返回工程首页</a>
     <header class="workspace-heading">
       <div>
@@ -226,7 +243,7 @@ onUnmounted(() => {
     <p v-if="gateway.mode === 'prototype'" class="banner" role="note">
       合成数据演示：操作仅保存在内存，刷新后重置，不会写入真实资源。演示开放时间不代表正式默认规则。
     </p>
-    <p v-else-if="gateway.mode === 'unconfigured'" class="banner" role="note">
+    <p v-else-if="session.mode === 'unconfigured'" class="banner" role="note">
       真实资源服务尚未接入，当前禁止新增和编辑。<a href="#resources-prototype"
         >查看交互演示</a
       >
@@ -234,14 +251,23 @@ onUnmounted(() => {
     <p class="hint">
       启用状态仅为基础配置，不代表某个时段可以预约。此处暂不提供停用、删除或开放规则修改。
     </p>
+    <p v-if="uncertain" class="banner" role="alert">
+      原资源操作仍待核对：{{
+        editing.state.pendingTarget
+      }}。关闭表单仅允许查看列表，不会清除未知状态或恢复新写入。请使用原账号核对或联系管理员；不要重复提交。
+    </p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
-    <section v-if="form" class="editor" aria-labelledby="editor-title">
+    <section
+      v-if="form && session.canManage"
+      class="editor"
+      aria-labelledby="editor-title"
+    >
       <h2 id="editor-title">
         {{ form.id ? "编辑" : "新增"
         }}{{ form.kind === "room" ? "教室" : "座位" }}
       </h2>
       <p v-if="form.kind === 'seat'" class="hint">
-        所属教室：{{ selected?.name }}；保存目标在打开表单时确定。
+        所属教室稳定ID：{{ form.roomId }}；保存目标在打开表单时确定。
       </p>
       <form @submit.prevent="save">
         <label for="resource-code">{{
@@ -252,7 +278,7 @@ onUnmounted(() => {
           v-model="draft.code"
           required
           maxlength="32"
-          :disabled="saving"
+          :disabled="saving || uncertain || !session.canManage"
           autocomplete="off"
         />
         <template v-if="form.kind === 'room'">
@@ -262,7 +288,7 @@ onUnmounted(() => {
             v-model="draft.name"
             required
             maxlength="100"
-            :disabled="saving"
+            :disabled="saving || uncertain || !session.canManage"
           />
           <label for="room-location">位置</label
           ><input
@@ -270,7 +296,7 @@ onUnmounted(() => {
             v-model="draft.location"
             required
             maxlength="200"
-            :disabled="saving"
+            :disabled="saving || uncertain || !session.canManage"
           />
         </template>
         <template v-else>
@@ -278,7 +304,7 @@ onUnmounted(() => {
           ><select
             id="seat-outlet"
             v-model="draft.outlet_type"
-            :disabled="saving"
+            :disabled="saving || uncertain || !session.canManage"
           >
             <option value="none">无插座</option>
             <option value="fixed">固定插座</option>
@@ -287,7 +313,10 @@ onUnmounted(() => {
         </template>
         <p v-if="saveError" role="alert">{{ saveError }}</p>
         <div class="actions">
-          <button type="submit" :disabled="saving || uncertain">
+          <button
+            type="submit"
+            :disabled="saving || uncertain || !session.canManage"
+          >
             {{ saving ? "正在保存…" : "保存" }}</button
           ><button
             type="button"
