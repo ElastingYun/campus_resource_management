@@ -247,6 +247,33 @@ class ApprovalService:
             self._readable(principal, row)
             return public(row)
 
+    def integration_progress(self, principal, application_id):
+        with self.database.transaction() as conn:
+            # One statement gives the application and its operations one snapshot,
+            # including when a concurrent revocation creates the next generation.
+            row = conn.execute(
+                """SELECT a.*,COALESCE((
+                     SELECT jsonb_agg(jsonb_build_object(
+                       'id',o.id,'generation',o.generation,'kind',o.kind,
+                       'state',o.state,'attempts',o.attempts,'error_code',o.error_code
+                     ) ORDER BY o.generation,o.id)
+                     FROM c_m1_operations o WHERE o.application_id=a.id
+                   ),'[]'::jsonb) AS operations
+                   FROM c_applications a WHERE a.id=%s""",
+                (application_id,),
+            ).fetchone()
+            if not row:
+                raise ServiceError(404, "NOT_FOUND", "申请不存在或不可见")
+            self._readable(principal, row)
+            return {
+                "application_id": row["id"],
+                "version": row["version"],
+                "generation": row["generation"],
+                "integration_status": row["integration_status"],
+                "effective": public(row)["effective"],
+                "operations": row["operations"],
+            }
+
     def actions(self, principal, application_id):
         with self.database.transaction() as conn:
             row = self._load(conn, application_id)

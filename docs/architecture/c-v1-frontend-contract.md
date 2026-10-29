@@ -19,6 +19,7 @@
 | 当前审批待办 | `GET /m2/review-tasks?limit=50&offset=0` | 当前节点、权限与资源范围内的申请数组 |
 | 节点决定 | `POST /m2/applications/{id}/decisions` | 更新后的申请视图 |
 | 可执行操作 | `GET /m2/applications/{id}/actions` | 申请 ID、当前版本、allowed_actions |
+| 占用处理进度 | `GET /m2/applications/{id}/integration` | 当前版本/代次、集成状态与精简操作状态；见[C-37](c37-integration-progress.md) |
 | 节点历史 | `GET /m2/applications/{id}/history` | 节点决定数组 |
 | 撤销 | `POST /m2/applications/{id}/revocations` | 更新后的申请视图；须显式配置允许并有权限 |
 | 审计查询 | `GET /audit/events?limit=50&offset=0` | 受权限和范围约束的审计数组 |
@@ -137,6 +138,7 @@ step_index 从 0 开始；step_count 来自提交时流程快照。deadline 是�
 | M1 确认释放 | 保留历史审批结果 | RELEASED | 本申请来源已释放 |
 
 只有 effective=true 才展示预约已生效；资源是否可再次预约由 M1 汇总剩余来源判定。
+重试耗尽仍保留申请的未知集成状态，处理进度中的 operation.state=ATTENTION 表示C后台已停止自动重试、需要核查；不意味着占用成功或已经安全释放。操作状态变化可能不增加申请version，刷新时须实际查询integration接口，不能只用申请版本缓存。
 后台扫描只处理未撤销的 REVIEWING 申请。审批完成后的自动到期撤销、申请人自由撤回、终态重开当前未启用。
 几级审批、期限、自审、驳回理由和撤销许可均来自显式流程配置；合成示例的两级审批不是全平台规则。
 

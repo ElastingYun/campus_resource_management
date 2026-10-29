@@ -49,6 +49,9 @@ class OperationWorker:
             if not row:
                 return None
             if row["attempts"] >= self.settings.max_attempts:
+                application = conn.execute(
+                    "SELECT room_id FROM c_applications WHERE id=%s", (row["application_id"],)
+                ).fetchone()
                 conn.execute(
                     """UPDATE c_m1_operations SET state='ATTENTION',lease_until=NULL,
                        lease_token=NULL,error_code='RETRY_LIMIT' WHERE id=%s""",
@@ -59,6 +62,7 @@ class OperationWorker:
                     actor=None,
                     action="m1.attention",
                     target=str(row["id"]),
+                    room_id=application["room_id"],
                     result="RETRY_LIMIT",
                     now=now,
                     request_id=str(row["id"]),
