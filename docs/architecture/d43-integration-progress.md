@@ -26,6 +26,17 @@ CI 资源依赖仍是明确的合成 HTTP 服务，本轮显式测试校园级 a
 - `npm run build --prefix frontend`：浏览器/Node两组类型检查、生产构建成功。
 - 定向负对照：仅在 `/private/tmp` 副本加入“有进度就跳过刷新”，同版本 UNKNOWN→ATTENTION 测试1 failed（应查询2次实际1次）；逐字节恢复后1 passed。仓库未提交破坏代码或放宽断言。
 - `bash -n infra/scripts/ci-m2-c-v1.sh`、fixture Python AST、`git diff --check`：通过。
-- 本机无 C/PostgreSQL，`npm run test:integration --prefix frontend`：1 skipped，NOT RUN；真实网络结果按本分支 GitHub Actions 后续记录。
+- 本机无 C/PostgreSQL，`npm run test:integration --prefix frontend`：1 skipped，NOT RUN；真实网络结果见下方固定提交 CI 证据。
 
 人工需 Review：C 核对状态/代次与只读消费、D 负责人检查界面及异常提示；非作者 Review 后由人决定合并。AI 辅助实现、测试与文档，不代替业务决策、人工评审或生产发布。
+
+## 固定提交证据
+
+前端 `aad920ee9b7fedc1314737d79f1b0e68a42b34c1`，C 固定 `185ec813da9262315c876fee57fbb366c25f55ed`。四个工作流、共8项检查均成功：
+
+- [真实 C 网络 PR 40811114388](https://github.com/ElastingYun/campus_resource_management/actions/runs/40811114388)、[push 40811047468](https://github.com/ElastingYun/campus_resource_management/actions/runs/40811047468)。真实 C/FastAPI/PostgreSQL17/Vite 下通过新增空操作、PENDING、重复查询和匿名/退出会话拒绝；保留原有真实持久化、响应丢失原键恢复与两级审批断言。
+- [工程 PR 40811114121](https://github.com/ElastingYun/campus_resource_management/actions/runs/40811114121)、[push 40811047499](https://github.com/ElastingYun/campus_resource_management/actions/runs/40811047499)：前端、后端/PostgreSQL和Compose恢复全部成功。
+
+浏览器使用临时、明确标记的合成进度宿主验证实际 Vue 组件：第2代释放 UNKNOWN 在申请版本4不变时刷新到 ATTENTION，页面显示需人工核查；第1代 DONE 仍为历史意图，没有改写当前占用结论。该宿主未发业务请求，临时文件与服务已清理，不把截图当成真实后端证据。
+
+PR [#45](https://github.com/ElastingYun/campus_resource_management/pull/45) 基于 #17，尚未自动合并。后续仅证据文档提交也需以各自 Checks 为准。
