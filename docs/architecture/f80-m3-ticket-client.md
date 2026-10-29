@@ -51,3 +51,9 @@ room_id 全程为规范正十进制字符串，最大9223372036854775807，不�
 | Git/文档边界检查 | 仅预期 F 文件，依赖/锁文件无差异，`git diff --cached --check`与文档检查按实际提交留证 |
 
 真实C/E运行挂载、真实M3 HTTP/PostgreSQL、完整迁移图、浏览器、M3→M1网络、失效账号/限流故障注入：本机 **NOT RUN**。本轮不改后端，未重跑后端业务测试；PR工程CI按当前head另行核对，不拿旧绿灯代替。所有最终Review、挂载与合并由人负责，不自动Approve或合并。
+
+## PR 与整合路径
+
+[PR #82](https://github.com/ElastingYun/campus_resource_management/pull/82) 原叠加 D #15；D #15 与 B #79 进入 main 后，GitHub compare确认固定 `ee89020` 为 main 祖先（behind_by=0、merge_base=ee89020），已把 #82 目标改为 main。工作分支保留原历史，没有自行合并或解决其他owner冲突。
+
+原始实现提交 `cfebda927ff15c60babe5d52211c420e5e6e6dbb` 因 Git HTTPS连接失败，经GitHub Git数据API核对树/作者/父节点和提交SHA完全一致后发布；不是重建不同历史。该提交的工程/网络工作流4项成功。改目标后的新提交与新main组合CI另以PR当前head核对，旧结果不冒充新组合验收。
