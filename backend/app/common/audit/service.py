@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from psycopg.types.json import Jsonb
+from sqlalchemy.orm import Session
 
 from app.common.auth.database import Database
 from app.common.auth.domain import Principal
@@ -55,6 +56,20 @@ class AuditService:
                 now=now,
                 request_id=request_id,
             )
+
+    def record_in_session(self, session: Session, **fields) -> None:
+        """Join the caller's PostgreSQL transaction; the caller owns its outcome."""
+        if not session.in_transaction():
+            raise ValueError("An active owner transaction is required for success audit")
+        connection = session.connection()
+        if connection.dialect.name != "postgresql" or connection.dialect.driver != "psycopg":
+            raise ValueError("Success audit requires the configured PostgreSQL driver")
+
+        class Executor:
+            def execute(self, statement, parameters):
+                return connection.exec_driver_sql(statement, parameters)
+
+        self.record(Executor(), **fields)
 
     def list_events(self, principal: Principal, *, limit: int, offset: int):
         principal.require("audit.read")
