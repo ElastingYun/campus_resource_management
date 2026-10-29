@@ -1,8 +1,20 @@
 /** Page view models, not an approved backend request/response contract. */
 export interface RoomOption {
   id: string;
+  code?: string;
   name: string;
   location: string;
+}
+export interface RoomOptionsQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+export interface RoomOptionsPage {
+  items: RoomOption[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 export interface ApplicationView {
   id: string;
@@ -14,6 +26,12 @@ export interface ApplicationView {
   statusLabel: string;
   statusTone: "neutral" | "positive" | "attention";
   note: string;
+  reviewLabel?: string;
+  integrationLabel?: string;
+  integrationStatus?: string;
+  effective?: boolean;
+  stepLabel?: string;
+  version?: number;
 }
 export interface ApplicationDraft {
   roomId: string;
@@ -21,14 +39,68 @@ export interface ApplicationDraft {
   startsAt: string;
   endsAt: string;
 }
+export type ReviewAction = "APPROVE" | "REJECT" | "REVOKE";
+export interface ApplicationDetails extends ApplicationView {
+  version: number;
+  allowedActions: ReviewAction[];
+  history: {
+    id: string;
+    decision: string;
+    actorId: string;
+    comment: string;
+    occurredAt: string;
+  }[];
+}
+export interface IntegrationProgress {
+  applicationId: string;
+  version: number;
+  generation: number;
+  integrationStatus: string;
+  effective: boolean;
+  operations: {
+    id: string;
+    generation: number;
+    kind: "APPLY" | "RELEASE";
+    state:
+      | "PENDING"
+      | "RUNNING"
+      | "UNKNOWN"
+      | "DONE"
+      | "CONFLICT"
+      | "ATTENTION";
+    attempts: number;
+    errorCode: string | null;
+  }[];
+}
+export interface WorkspaceQuery {
+  offset?: number;
+  limit?: number;
+  review?: boolean;
+}
 export interface WorkspaceData {
   rooms: RoomOption[];
   applications: ApplicationView[];
+  canSubmit?: boolean;
+  canReview?: boolean;
+  roomWarning?: string;
+  pagination?: { offset: number; limit: number; hasNext: boolean };
 }
 export interface M2Gateway {
   readonly mode: "prototype" | "unconfigured" | "live";
-  load(): Promise<WorkspaceData>;
+  load(query?: WorkspaceQuery): Promise<WorkspaceData>;
   submit(draft: ApplicationDraft): Promise<ApplicationView>;
+  detail?(id: string): Promise<ApplicationDetails>;
+  roomOptions?(query?: RoomOptionsQuery): Promise<RoomOptionsPage>;
+  integration?(id: string): Promise<IntegrationProgress>;
+  decide?(
+    id: string,
+    action: "APPROVE" | "REJECT",
+    comment: string,
+    version: number,
+  ): Promise<ApplicationView>;
+  revoke?(id: string, version: number): Promise<ApplicationView>;
+  pending?(): { label: string } | undefined;
+  recover?(): Promise<ApplicationView>;
   simulateDecision?(
     id: string,
     decision: "accept" | "return",

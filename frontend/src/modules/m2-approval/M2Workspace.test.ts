@@ -4,7 +4,12 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import M2Workspace from "./M2Workspace.vue";
 import { createPrototypeGateway, createUnconfiguredGateway } from "./gateways";
 import { GatewayMessage } from "./models";
-import type { ApplicationView, M2Gateway, WorkspaceData } from "./models";
+import type {
+  ApplicationDetails,
+  ApplicationView,
+  M2Gateway,
+  WorkspaceData,
+} from "./models";
 
 enableAutoUnmount(afterEach);
 afterEach(() => vi.unstubAllGlobals());
@@ -191,5 +196,188 @@ describe("M2 workspace observable behavior", () => {
     expect(load).toHaveBeenCalledTimes(2);
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("没有符合条件的申请");
+  });
+  it("separates approved review from unconfirmed occupancy in a live detail", async () => {
+    const record: ApplicationDetails = {
+      id: "00000000-0000-4000-8000-000000000010",
+      roomId: "1",
+      roomName: "教室 1",
+      purpose: "服务端用途",
+      startsAt: "2030-01-02T01:00:00Z",
+      endsAt: "2030-01-02T03:00:00Z",
+      statusLabel: "审批已通过",
+      statusTone: "neutral",
+      note: "尚未确认占用",
+      reviewLabel: "审批已通过",
+      integrationLabel: "正在确认占用",
+      effective: false,
+      version: 1,
+      allowedActions: [],
+      history: [],
+    };
+    const wrapper = mount(M2Workspace, {
+      props: {
+        gateway: {
+          mode: "live",
+          load: async () => ({
+            rooms: [],
+            applications: [record],
+            canSubmit: false,
+          }),
+          submit: vi.fn(),
+          detail: async () => record,
+        },
+      },
+    });
+    await flushPromises();
+    const detail = wrapper.get('[aria-label="申请详情"]').text();
+    expect(detail).toContain("审批已通过");
+    expect(detail).toContain("正在确认占用");
+    expect(detail).toContain("尚未确认生效");
+    expect(wrapper.find('[aria-label="服务端允许操作"]').text()).toContain(
+      "当前没有服务端允许的操作",
+    );
+    expect(
+      wrapper
+        .findAll("button")
+        .some((button) => button.text() === "通过当前节点"),
+    ).toBe(false);
+  });
+  it("uses only backend allowed actions and the correlated detail version", async () => {
+    const record: ApplicationDetails = {
+      id: "00000000-0000-4000-8000-000000000010",
+      roomId: "1",
+      roomName: "教室 1",
+      purpose: "服务端用途",
+      startsAt: "2030-01-02T01:00:00Z",
+      endsAt: "2030-01-02T03:00:00Z",
+      statusLabel: "审批中",
+      statusTone: "neutral",
+      note: "等待决定",
+      version: 7,
+      allowedActions: ["REJECT"],
+      history: [],
+    };
+    const decide = vi
+      .fn()
+      .mockResolvedValue({ ...record, version: 8, statusLabel: "已驳回" });
+    const detail = vi
+      .fn()
+      .mockResolvedValueOnce(record)
+      .mockResolvedValue({
+        ...record,
+        version: 8,
+        statusLabel: "已驳回",
+        allowedActions: [],
+      });
+    const wrapper = mount(M2Workspace, {
+      props: {
+        gateway: {
+          mode: "live",
+          load: async () => ({ rooms: [], applications: [record] }),
+          submit: vi.fn(),
+          detail,
+          decide,
+        },
+      },
+    });
+    await flushPromises();
+    expect(
+      wrapper
+        .findAll("button")
+        .some((button) => button.text() === "通过当前节点"),
+    ).toBe(false);
+    await wrapper.get("#m2-comment").setValue("请补充资料");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "驳回申请")!
+      .trigger("click");
+    await flushPromises();
+    expect(decide).toHaveBeenCalledWith(record.id, "REJECT", "请补充资料", 7);
+  });
+  it("exposes manual recovery and disables fresh submission while a write is uncertain", async () => {
+    const demo = createPrototypeGateway(),
+      data = await demo.load();
+    let pending = false;
+    const submit = vi.fn(async () => {
+      pending = true;
+      throw new GatewayMessage("结果未知");
+    });
+    const recover = vi.fn(async () => {
+      pending = false;
+      return data.applications[0]!;
+    });
+    const wrapper = mount(M2Workspace, {
+      props: {
+        gateway: {
+          mode: "live",
+          load: demo.load,
+          submit,
+          pending: () => (pending ? { label: "申请提交" } : undefined),
+          recover,
+        },
+      },
+    });
+    await flushPromises();
+    await openForm(wrapper);
+    await fillForm(wrapper);
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(
+      wrapper.get('button[type="submit"]').attributes("disabled"),
+    ).toBeDefined();
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "恢复上次操作结果")!
+      .trigger("click");
+    await flushPromises();
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[role="status"]').text()).toContain("没有新建重复操作");
+  });
+  it("requeries allowed actions when reloading the same application and version", async () => {
+    const record: ApplicationDetails = {
+      id: "00000000-0000-4000-8000-000000000010",
+      roomId: "1",
+      roomName: "教室 1",
+      purpose: "服务端用途",
+      startsAt: "2030-01-02T01:00:00Z",
+      endsAt: "2030-01-02T03:00:00Z",
+      statusLabel: "审批中",
+      statusTone: "neutral",
+      note: "等待决定",
+      version: 1,
+      allowedActions: ["APPROVE"],
+      history: [],
+    };
+    const detail = vi
+      .fn()
+      .mockResolvedValueOnce(record)
+      .mockResolvedValue({ ...record, allowedActions: [] });
+    const wrapper = mount(M2Workspace, {
+      props: {
+        gateway: {
+          mode: "live",
+          load: async () => ({ rooms: [], applications: [record] }),
+          submit: vi.fn(),
+          detail,
+          decide: vi.fn(),
+        },
+      },
+    });
+    await flushPromises();
+    expect(
+      wrapper
+        .findAll("button")
+        .some((button) => button.text() === "通过当前节点"),
+    ).toBe(true);
+    await wrapper.get(".page-heading button").trigger("click");
+    await flushPromises();
+    expect(detail).toHaveBeenCalledTimes(2);
+    expect(
+      wrapper
+        .findAll("button")
+        .some((button) => button.text() === "通过当前节点"),
+    ).toBe(false);
   });
 });
