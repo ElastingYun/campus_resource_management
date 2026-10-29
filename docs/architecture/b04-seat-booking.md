@@ -1,6 +1,7 @@
 # B-04 预约确认、提交及未知结果恢复
 
 B / hrzhao7；关联 [Issue #29](https://github.com/ElastingYun/campus_resource_management/issues/29)、B-UI-02。状态：第一阶段页面及候选适配，待 A/C/D Review；不宣称真实预约闭环完成。
+后续[生命周期修复](b-booking-session-lifecycle.md)增加应用级BookingSession；最新版live写入必须注入该长期对象，原临时bookingGateway配置不再启用live。本文件其余内容记录初版契约及限制。
 
 基于 D 集成分支 `490e4f6f`（含 B #20/#26）。与审计 PR #28 独立，未带入未合并的后端增量。代码仅在 `frontend/src/modules/m1-reservation/booking/`、B 的查询组件及测试；没有修改 App.vue、README、AGENTS、后端、依赖或共享配置。
 
