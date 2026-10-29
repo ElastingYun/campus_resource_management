@@ -50,6 +50,7 @@ error_code当前为null、REMOTE_UNCONFIRMED或RETRY_LIMIT，仅是C保存的机
 申请和操作通过同一条PostgreSQL SQL聚合读取，使用同一语句快照。并发撤销时只会得到原代次或新代次的完整事实，避免先读旧申请、后读到新操作的混合视图。版本检查仍按原写接口执行，此查询不提供锁定承诺。
 
 重试耗尽的m1.attention审计从C自有申请取得真实room_id，沿用audit.read与教室范围过滤；其他教室或无审计权限者仍不可读。重复扫描不重复产生ATTENTION审计；诊断查询也不会补造审计。
+该修复影响新产生的重试耗尽审计；历史room_id缺失的记录继续按原规则可见，不推断归属或回填历史数据。
 
 没有迁移、新依赖、工作流改动或对A/B私有表的访问；原冻结SQL字节不变。新增接口为兼容的C-v1能力，既有申请响应保持原样，请D Review消费与展示语义。
 
@@ -63,3 +64,5 @@ error_code当前为null、REMOTE_UNCONFIRMED或RETRY_LIMIT，仅是C保存的机
 负对照仅修改 `/private/tmp/c37-combined` 的隔离C副本，临时绕过本端点的对象范围检查：`test_integration_progress_visibility[outsider-404]` 原实现1通过→破坏后1失败（200而非404）→逐字节恢复后1通过。原始记录为临时 `/private/tmp/c37-negative-control.log`；仓库未提交破坏实现。
 
 目标Python3.13/PostgreSQL17及Engineering/C-B实际CI以本增量PR Checks为准，完成后补链接。M1为明确的测试契约依赖，真实A服务仍由#23验收；本接口不是实际M1网络联调的替代。AI辅助实现/测试，非作者Review与最终合并由人类决定。
+
+交付 [PR #39](https://github.com/ElastingYun/campus_resource_management/pull/39)。固定1800570的 [C/B push40798264920](https://github.com/ElastingYun/campus_resource_management/actions/runs/40798264920)、[C/B PR40798373136](https://github.com/ElastingYun/campus_resource_management/actions/runs/40798373136)、[Engineering push40798265014](https://github.com/ElastingYun/campus_resource_management/actions/runs/40798265014)、[Engineering PR40798373122](https://github.com/ElastingYun/campus_resource_management/actions/runs/40798373122) 均success。后续提交按各自Checks核对。
