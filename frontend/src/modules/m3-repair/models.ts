@@ -64,6 +64,11 @@ export const isRoomId = (v: unknown): v is string =>
   /^[1-9][0-9]{0,18}$/.test(v) &&
   (v.length < 19 || v <= "9223372036854775807");
 
+// Pydantic-core's Rust str::trim uses Unicode White_Space. JS trim differs
+// for U+0085 and U+FEFF, which would break request/response echo matching.
+const stripEWhitespace = (value: string): string =>
+  value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+
 export function prepareDraft(draft: ReportDraft): Readonly<ReportDraft> {
   if (
     !isObject(draft) ||
@@ -72,7 +77,7 @@ export function prepareDraft(draft: ReportDraft): Readonly<ReportDraft> {
     /[\u0000-\u001f\u007f]/.test(draft.description)
   )
     throw new M3ClientError("validation");
-  const description = draft.description.trim();
+  const description = stripEWhitespace(draft.description);
   if (description.length === 0 || Array.from(description).length > 2000)
     throw new M3ClientError("validation");
   return Object.freeze({ roomId: draft.roomId, description });
@@ -84,7 +89,7 @@ export function parseTicket(value: unknown): RepairTicket {
     !isUuid(value.id) ||
     !isRoomId(value.room_id) ||
     typeof value.description !== "string" ||
-    value.description.trim().length === 0 ||
+    stripEWhitespace(value.description).length === 0 ||
     Array.from(value.description).length > 2000 ||
     /[\u0000-\u001f\u007f]/.test(value.description) ||
     typeof value.status !== "string" ||

@@ -44,10 +44,10 @@ room_id 全程为规范正十进制字符串，最大9223372036854775807，不�
 
 | 命令 | 实际结果 |
 | --- | --- |
-| `npm test -- src/modules/m3-repair/ticket-access.test.ts` | 61 passed；正常/边界、HTTP拒绝、非法响应、未知结果、同键恢复、重复在途、会话隔离、超时及隐私快照 |
-| `npm test` | 316 passed / 19 files，全量默认前端测试，无跳过 |
+| `npm test -- src/modules/m3-repair/ticket-access.test.ts` | 64 passed；正常/边界、HTTP拒绝、非法响应、未知结果、同键恢复、重复在途、会话隔离、超时及隐私快照 |
+| `npm test` | 319 passed / 19 files，全量默认前端测试，无跳过 |
 | `npm run build` | vue-tsc、独立集成TS类型检查与 Vite生产构建通过；未挂载的 F 模块由TS和测试消费，不声称生产入口已展示 |
-| 迟到读取保护负对照 | 原实现3 passed → 临时禁用单个会话保护3 failed → finally恢复原字节3 passed；其余58项是定向筛选未执行，不计负对照通过 |
+| 迟到读取保护负对照 | 原实现3 passed → 临时禁用单个会话保护3 failed → finally恢复原字节3 passed；其余61项是定向筛选未执行，不计负对照通过 |
 | Git/文档边界检查 | 仅预期 F 文件，依赖/锁文件无差异，`git diff --cached --check`与文档检查按实际提交留证 |
 
 真实C/E运行挂载、真实M3 HTTP/PostgreSQL、完整迁移图、浏览器、M3→M1网络、失效账号/限流故障注入：本机 **NOT RUN**。本轮不改后端，未重跑后端业务测试；PR工程CI按当前head另行核对，不拿旧绿灯代替。所有最终Review、挂载与合并由人负责，不自动Approve或合并。
@@ -57,3 +57,9 @@ room_id 全程为规范正十进制字符串，最大9223372036854775807，不�
 [PR #82](https://github.com/ElastingYun/campus_resource_management/pull/82) 原叠加 D #15；D #15 与 B #79 进入 main 后，GitHub compare确认固定 `ee89020` 为 main 祖先（behind_by=0、merge_base=ee89020），已把 #82 目标改为 main。工作分支保留原历史，没有自行合并或解决其他owner冲突。
 
 原始实现提交 `cfebda927ff15c60babe5d52211c420e5e6e6dbb` 因 Git HTTPS连接失败，经GitHub Git数据API核对树/作者/父节点和提交SHA完全一致后发布；不是重建不同历史。该提交的工程/网络工作流4项成功。改目标后的新提交与新main组合CI另以PR当前head核对，旧结果不冒充新组合验收。
+
+## Unicode 规范化修正
+
+最终契约复核发现JavaScript `trim()` 与E的Pydantic-core/Rust Unicode White_Space不同：U+0085会被E去除，U+FEFF则保留。原客户端可能因此误判成功回执或拒绝合法文本。新增3项回归在旧实现下实际3 failed；改为Unicode White_Space规范化后，完整64项M3与319项前端回归、类型/构建通过，原断言均保留。
+
+只在Git忽略缓存安装E已锁定Pydantic2.14.1/core2.50.1，用Python `-I -S`隔离加载实际TicketCreate，3个Unicode样例全部与F新实现一致；宿主Pydantic仍2.12.5。该探针只验证输入schema，不冒充后端工单/HTTP/数据库验收。[校验器实现依据](https://raw.githubusercontent.com/pydantic/pydantic-core/main/src/validators/string.rs)。安装器曾扫描到宿主其他包的兼容性警告，隔离导入未加载它们，未更改全局环境。

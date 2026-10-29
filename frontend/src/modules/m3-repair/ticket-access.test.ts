@@ -111,6 +111,19 @@ describe("M3 own-ticket contract consumption", () => {
     expect(f.fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["\u0085text\u0085", "text"],
+    ["\ufefftext\ufeff", "\ufefftext\ufeff"],
+    ["\ufeff", "\ufeff"],
+  ])("matches E Unicode whitespace normalization", async (input, normalized) => {
+    const f = fixture();
+    f.fetcher.mockResolvedValue(response(wire({ description: normalized })));
+    const ticket = await f.access.submit({ roomId, description: input });
+    expect(ticket.description).toBe(normalized);
+    expect(JSON.parse(f.fetcher.mock.calls[0]![1]!.body as string).description).toBe(normalized);
+    expect(f.access.hasUnresolvedReports()).toBe(false);
+  });
+
   it.each([[0, 0], [101, 0], [20, -1], [20, 1.5], [20, Number.MAX_SAFE_INTEGER + 1]])(
     "rejects invalid paging %s/%s before sending", async (limit, offset) => {
       const f = fixture();
