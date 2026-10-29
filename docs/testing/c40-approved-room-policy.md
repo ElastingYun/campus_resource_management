@@ -34,4 +34,6 @@ CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE=1 CAMPUS_TEST_POSTGRES=1 python -m pytest -q
 
 C独立分支在backend/执行 `CAMPUS_TEST_POSTGRES=1 python -m pytest -q`：**147 passed, 1 skipped, 1 warning in24.28s**，未设置CAMPUS_REQUIRE_RESOURCE_ACCEPTANCE，跳过项为未安装B模块；日志 `/private/tmp/c40-standalone-regression.log`。专用组合CI要求B存在，不能静默跳过。
 
-Ruff、格式46文件和diff检查通过。目标Python3.13/PostgreSQL17、前端构建与Compose结果以本增量PR实际Checks为准，完成后补链接。本机Docker **NOT RUN**；普通选择列表、D浏览器、A实际占用冲突与E通知仍待各owner，不能用本次测试替代。AI辅助实现和验证，非作者Review/最终合并由人决定。
+Ruff、格式46文件和diff检查通过。交付 [PR #41](https://github.com/ElastingYun/campus_resource_management/pull/41)，固定ee67bd6的 [Engineering push40804424228](https://github.com/ElastingYun/campus_resource_management/actions/runs/40804424228)、[Engineering PR40804545622](https://github.com/ElastingYun/campus_resource_management/actions/runs/40804545622)、[C/B push40804424248](https://github.com/ElastingYun/campus_resource_management/actions/runs/40804424248)、[C/B PR40804545649](https://github.com/ElastingYun/campus_resource_management/actions/runs/40804545649) 四轮均success，共8项检查。目标Python3.13/PostgreSQL17的C/B PR日志为 **201 passed, 1 warning in46.81s**；Engineering包含真实前端构建与Compose构建/断库恢复。后续提交按各自Checks核对。
+
+本机Docker **NOT RUN**；普通选择列表、D浏览器、A实际占用冲突与E通知仍待各owner，不能用本次测试替代。AI辅助实现和验证，非作者Review/最终合并由人决定。
