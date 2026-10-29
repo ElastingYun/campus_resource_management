@@ -35,6 +35,22 @@ class AssignmentPolicy:
             raise TicketError(403, "out_of_scope", "无权派发该教室工单")
 
 
+class ReportPolicy:
+    def require_reportable(self, room_id, actor):
+        assert room_id == 1 and actor.subject_id == "reporter-2"
+
+
+class ReportAudit:
+    def record_created(self, session, *, actor, ticket_id, room_id, request_id, now):
+        assert session.in_transaction()
+        assert room_id == "1" and now.tzinfo is not None
+        session.execute(
+            insert(audit_entries).values(
+                event_id=request_id, ticket_id=ticket_id, actor_id=actor.subject_id
+            )
+        )
+
+
 class AssignmentAudit:
     def __init__(self):
         self.fail_after_write = False
@@ -89,13 +105,19 @@ def assignment_client():
             )
         )
         session.commit()
-    holder = {"actor": TicketActor("dispatcher-1", can_assign=True), "audit": AssignmentAudit()}
+    holder = {
+        "actor": TicketActor("dispatcher-1", can_assign=True),
+        "audit": AssignmentAudit(),
+        "report_audit": ReportAudit(),
+    }
     policy = AssignmentPolicy()
     app = FastAPI()
     app.state.engine = engine
     app.include_router(
         create_router(
             actor_dependency=lambda: holder["actor"],
+            room_policy_dependency=ReportPolicy,
+            audit_dependency=lambda: holder["report_audit"],
             assignment_policy_dependency=lambda: policy,
             assignment_audit_dependency=lambda: holder["audit"],
         )
@@ -120,6 +142,34 @@ def counts(engine):
             session.scalar(select(func.count()).select_from(ticket_events)),
             session.scalar(select(func.count()).select_from(audit_entries)),
         )
+
+
+def test_first_review_report_read_and_assign_http_flow(assignment_client):
+    client, holder, _, engine, _ = assignment_client
+    holder["actor"] = TicketActor("reporter-2", can_create=True, can_read_own=True)
+    created = client.post(
+        "/api/v1/m3/tickets",
+        headers={"Idempotency-Key": "first-review-report"},
+        json={"room_id": "1", "description": "合成灯具故障"},
+    )
+    assert created.status_code == 201
+    ticket_id = created.json()["id"]
+    assert created.json()["status"] == "REPORTED"
+    own = client.get(f"/api/v1/m3/tickets/{ticket_id}")
+    assert own.status_code == 200 and own.json()["id"] == ticket_id
+
+    holder["actor"] = TicketActor("dispatcher-1", can_assign=True)
+    assigned = assign(client, ticket_id)
+    assert assigned.status_code == 201
+    assert assigned.json()["status"] == "ASSIGNED"
+    assert assigned.json()["version"] == 1
+    assert counts(engine) == (1, 2)
+
+    holder["actor"] = TicketActor("reporter-2", can_read_own=True)
+    after = client.get(f"/api/v1/m3/tickets/{ticket_id}")
+    assert after.status_code == 200 and after.json()["status"] == "ASSIGNED"
+    holder["actor"] = TicketActor("other-reporter", can_read_own=True)
+    assert client.get(f"/api/v1/m3/tickets/{ticket_id}").status_code == 404
 
 
 def test_assignment_replay_and_version_conflict(assignment_client):
