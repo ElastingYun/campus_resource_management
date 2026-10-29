@@ -20,7 +20,8 @@ function button(wrapper: VueWrapper, text: string) {
 }
 function setup() {
   const actor = ref<string | null>("A"),
-    allowed = ref(true);
+    allowed = ref(true),
+    createAllowed = ref(true);
   const gateway: ResourceGateway = {
     ...createPrototypeResourceGateway(),
     mode: "live",
@@ -28,8 +29,9 @@ function setup() {
   const session = createResourceSession(gateway, {
     currentActorId: () => actor.value,
     canManage: () => allowed.value,
+    canCreateRooms: () => allowed.value && createAllowed.value,
   });
-  return { actor, allowed, gateway, session };
+  return { actor, allowed, createAllowed, gateway, session };
 }
 async function view(gateway: ResourceGateway, session?: ResourceSession) {
   const wrapper = mount(ResourceWorkspace, {
@@ -143,6 +145,23 @@ describe("B resource actual component lifecycle", () => {
     await session.current!.save();
     expect(create).not.toHaveBeenCalled();
     expect(button(wrapper, "新增教室").attributes("disabled")).toBeDefined();
+  });
+  it("keeps scoped management available but freezes a revoked create draft with an exit", async () => {
+    const { createAllowed, gateway, session } = setup(),
+      create = vi.spyOn(gateway, "createRoom");
+    const wrapper = await view(gateway, session);
+    await button(wrapper, "新增教室").trigger("click");
+    await wrapper.get("#resource-code").setValue("RETAINED");
+    createAllowed.value = false;
+    await flushPromises();
+    expect(wrapper.text()).toContain("新建教室权限已变化");
+    expect(wrapper.get("#resource-code").attributes("disabled")).toBeDefined();
+    await session.current!.save();
+    expect(create).not.toHaveBeenCalled();
+    await button(wrapper, "取消").trigger("click");
+    expect(button(wrapper, "新增教室").attributes("disabled")).toBeDefined();
+    expect(button(wrapper, "编辑教室").attributes("disabled")).toBeUndefined();
+    expect(button(wrapper, "新增座位").attributes("disabled")).toBeUndefined();
   });
   it("ignores a delayed old-account query even after switching back", async () => {
     const { actor, gateway, session } = setup(),
