@@ -14,6 +14,10 @@ import type { CheckinSession } from "../records/checkin";
 import { createPrototypeRecordsGateway } from "../records/prototype";
 import { createUnconfiguredRecordsGateway } from "../records/gateway";
 import type { RecordsGateway } from "../records/models";
+import OperationsWorkspace from "../operations/OperationsWorkspace.vue";
+import type { OperationsGateway } from "../operations/models";
+import { createPrototypeOperationsGateway } from "../operations/prototype";
+import { createUnconfiguredOperationsGateway } from "../operations/gateway";
 import {
   businessDate,
   outletLabels,
@@ -35,10 +39,17 @@ const props = defineProps<{
   bookingSession?: BookingSession;
   recordsGateway?: RecordsGateway;
   checkinSession?: CheckinSession;
+  operationsGateway?: OperationsGateway;
 }>();
 const emit = defineEmits<{ bookingPending: [pending: boolean] }>();
 const demoReceipts = new Map<string, ReservationReceipt>();
 const tab = ref("search");
+const operationsGateway =
+  props.operationsGateway?.mode === props.gateway.mode
+    ? props.operationsGateway
+    : !props.operationsGateway && props.gateway.mode === "prototype"
+      ? createPrototypeOperationsGateway()
+      : createUnconfiguredOperationsGateway();
 const requestedBooking =
   props.bookingGateway ??
   (props.gateway.mode === "prototype"
@@ -314,11 +325,19 @@ onUnmounted(() => {
       <button :aria-pressed="tab === 'records'" @click="tab = 'records'">
         我的预约与签到
       </button>
+      <button :aria-pressed="tab === 'operations'" @click="tab = 'operations'">
+        运营与教室终端
+      </button>
     </nav>
     <MyReservations
       v-if="tab === 'records'"
       :gateway="recordsGateway"
       :checkin-session="checkinSession"
+      :business-time-zone="gateway.businessTimeZone ?? undefined"
+    />
+    <OperationsWorkspace
+      v-if="tab === 'operations'"
+      :gateway="operationsGateway"
       :business-time-zone="gateway.businessTimeZone ?? undefined"
     />
     <div v-show="tab === 'search'">
