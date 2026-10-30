@@ -42,7 +42,7 @@ def verify_source(root: Path) -> None:
             raise ValueError("Acceptance source differs from its pinned manifest")
 
 
-def initialize(uri: str) -> None:
+def initialize(uri: str, *, migrated: bool = False) -> None:
     import psycopg
     from sqlalchemy import create_engine, insert, text
 
@@ -55,10 +55,12 @@ def initialize(uri: str) -> None:
     database = Database(uri)
     # C's frozen standalone baseline and B's private test fixture only. This does
     # not claim to migrate or validate the full A/C/E shared Alembic graph.
-    migrate(database)
+    if not migrated:
+        migrate(database)
     engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg.connect(uri))
     try:
-        metadata.create_all(engine)
+        if not migrated:
+            metadata.create_all(engine)
         with engine.begin() as connection:
             for identifier, code in ((1, "B-LOCAL"), (9007199254740993, "B-BIG")):
                 connection.execute(
@@ -87,6 +89,7 @@ def initialize(uri: str) -> None:
             ("b-manager", management, True),
             ("b-reader", frozenset({"synthetic.resource.read"}), False),
             ("b-scoped", management, False),
+            ("b-service", frozenset({"synthetic.resource.read"}), True),
         ):
             auth.provision_user(
                 username=name,
@@ -117,7 +120,9 @@ def stop(process) -> None:
         process.wait(timeout=5)
 
 
-def run_browser(frontend: Path, origin: str, temporary: Path, channel: str | None) -> int:
+def run_browser(
+    frontend: Path, origin: str, temporary: Path, channel: str | None, *, shared_host: bool = False
+) -> int:
     import httpx
 
     node = shutil.which("node")
@@ -132,6 +137,17 @@ def run_browser(frontend: Path, origin: str, temporary: Path, channel: str | Non
     )
     environment.pop("VITE_B_RESOURCE_ACCEPTANCE_ORIGIN", None)
     environment.pop("B_RESOURCE_BROWSER_CHANNEL", None)
+    environment.pop("B_RESOURCE_HOST_ACCEPTANCE", None)
+    environment.pop("VITE_RESOURCE_PERMISSIONS", None)
+    if shared_host:
+        environment["B_RESOURCE_HOST_ACCEPTANCE"] = "1"
+        environment["VITE_RESOURCE_PERMISSIONS"] = json.dumps(
+            {
+                "read": "synthetic.resource.read",
+                "manage": "synthetic.resource.manage",
+                "create_rooms": "synthetic.resource.create",
+            }
+        )
     if channel:
         environment["B_RESOURCE_BROWSER_CHANNEL"] = channel
     process = None
@@ -158,7 +174,9 @@ def run_browser(frontend: Path, origin: str, temporary: Path, channel: str | Non
                         raise RuntimeError("Isolated Vite service exited before readiness")
                     try:
                         response = client.get(
-                            "/src/modules/m1-reservation/resources/browser/index.html"
+                            "/"
+                            if shared_host
+                            else "/src/modules/m1-reservation/resources/browser/index.html"
                         )
                         if response.status_code == 200:
                             break
@@ -183,7 +201,14 @@ def run_browser(frontend: Path, origin: str, temporary: Path, channel: str | Non
             stop(process)
 
 
-def run(source: Path, frontend: Path, browser: bool = False, channel: str | None = None) -> int:
+def run(
+    source: Path,
+    frontend: Path,
+    browser: bool = False,
+    channel: str | None = None,
+    *,
+    shared_host: bool = False,
+) -> int:
     import httpx
     import pgserver
     import psycopg
@@ -259,7 +284,7 @@ def run(source: Path, frontend: Path, browser: bool = False, channel: str | None
                 )
             if result.returncode or not browser:
                 return result.returncode
-            return run_browser(frontend, origin, Path(temporary), channel)
+            return run_browser(frontend, origin, Path(temporary), channel, shared_host=shared_host)
         finally:
             stop(process)
             server.cleanup()
@@ -277,6 +302,11 @@ if __name__ == "__main__":
         "--browser", action="store_true", help="Also run actual desktop/mobile Chromium"
     )
     parser.add_argument(
+        "--shared-host",
+        action="store_true",
+        help="Test the actual shared App with the pinned backend",
+    )
+    parser.add_argument(
         "--browser-channel",
         choices=["chrome"],
         help="Use an installed Chrome; default uses Playwright Chromium",
@@ -284,11 +314,14 @@ if __name__ == "__main__":
     arguments = parser.parse_args()
     if arguments.browser_channel and not arguments.browser:
         parser.error("--browser-channel requires --browser")
+    if arguments.shared_host and not arguments.browser:
+        parser.error("--shared-host requires --browser")
     raise SystemExit(
         run(
             arguments.combined_source.resolve(),
             arguments.frontend.resolve(),
             arguments.browser,
             arguments.browser_channel,
+            shared_host=arguments.shared_host,
         )
     )

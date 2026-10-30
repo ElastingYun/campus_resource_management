@@ -7,11 +7,12 @@ if (!origin || !/^http:\/\/127\.0\.0\.1:\d+$/.test(origin))
     "B browser acceptance requires the isolated loopback launcher",
   );
 const channel = process.env.B_RESOURCE_BROWSER_CHANNEL;
+const sharedHost = process.env.B_RESOURCE_HOST_ACCEPTANCE === "1";
 if (channel && channel !== "chrome")
   throw new Error("Unsupported browser channel");
 export default defineConfig({
   testDir: ".",
-  testMatch: "resources.spec.ts",
+  testMatch: sharedHost ? "resources-host.spec.ts" : "resources.spec.ts",
   workers: 1,
   fullyParallel: false,
   retries: 0,
@@ -19,7 +20,10 @@ export default defineConfig({
   timeout: 45000,
   globalTimeout: 240000,
   reporter: "list",
-  outputDir: resolve(process.cwd(), "test-results/b-resources"),
+  outputDir: resolve(
+    process.cwd(),
+    sharedHost ? "test-results/b-resource-host" : "test-results/b-resources",
+  ),
   use: {
     baseURL: origin,
     browserName: "chromium",
