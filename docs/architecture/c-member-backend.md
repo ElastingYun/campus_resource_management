@@ -112,8 +112,8 @@ M1 需要持久幂等与版本/终态保护；本地 generation/租约隔离不�
 
 ## 7. 迁移与合成演示
 
-统一 Alembic 链为 0001_bootstrap → 0002_c_identity_approval。0002 只执行冻结的 001_c_foundation.sql；已存在 C 基线时校验账本、校验和与表，保留账号及业务数据。
-SQL 历史没有改写。后续结构必须新增 Alembic revision；破坏性 downgrade 当前拒绝执行，恢复计划需单独批准。
+统一 Alembic 当前单一 head 为 `0008_merge_c_m3`。C 的 `0002_c_identity_approval` 从 `0001_bootstrap` 分出，只执行冻结的 `001_c_foundation.sql`；已存在 C 基线时校验账本、校验和与表，保留账号及业务数据。
+`0007_merge_m1_c` 连接 M1 的 `0006_m1_seat_restrictions` 与 C 的 `0002_c_identity_approval`；`0008_merge_c_m3` 再连接 `0007_merge_m1_c` 与 M3 的 `e03_m3_assignment`。两份汇合迁移没有 DDL，旧 A/C/E 迁移和 C SQL 历史没有改写，实际升级与数据保留证据见[迁移接入验证](../testing/c61-main-migration-join.md)。后续结构必须新增 Alembic revision；破坏性 downgrade 当前拒绝执行，恢复计划需单独批准。
 独立 `migrate()` 保留给旧合成演示兼容，不用于宿主应用启动。
 
 旧的 `python -m app.modules.m2_approval.demo` 仍可在显式 C_DEMO_MODE、专用演示数据库和演示密码下运行。它有合成教室与两级一分钟流程，不连接 M1。
