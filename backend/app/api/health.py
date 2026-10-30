@@ -30,4 +30,12 @@ def ready(request: Request) -> dict[str, str] | JSONResponse:
             status_code=503,
             content={"status": "not_ready", "database": "unavailable", "scope": "bootstrap"},
         )
+    component = getattr(request.app.state, "c_runtime", None)
+    if component is not None and not component.ready():
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": "connected", "scope": "m2"},
+        )
+    if component is not None:
+        return {"status": "ready", "database": "connected", "scope": "m2"}
     return {"status": "ready", "database": "connected", "scope": "bootstrap"}

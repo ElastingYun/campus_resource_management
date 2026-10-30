@@ -44,12 +44,12 @@ def verify_source(root: Path) -> None:
 
 def initialize(uri: str) -> None:
     import psycopg
+    from sqlalchemy import create_engine, insert, text
+
     from app.common.audit.service import AuditService
     from app.common.auth.database import Database
     from app.common.auth.service import AuthService, AuthSettings
     from app.modules.m2_approval.migrate import migrate
-    from sqlalchemy import create_engine, insert, text
-
     from app.modules.resources.tables import metadata, rooms
 
     database = Database(uri)

@@ -1,0 +1,31 @@
+{
+  "auth": {"session_ttl_seconds": 600, "attempt_window_seconds": 300, "max_attempts": 30},
+  "workflow": {
+    "version": "synthetic-example-only-v1",
+    "steps": [
+      {"permission": "review.first", "timeout_seconds": 600},
+      {"permission": "review.second", "timeout_seconds": 1200}
+    ],
+    "allow_self_review": false,
+    "deadline_inclusive": true,
+    "require_rejection_reason": true,
+    "allow_revocation": true
+  },
+  "submission": {
+    "timezone": "Asia/Shanghai",
+    "allow_cross_department": false,
+    "minimum_notice_seconds": 0,
+    "time_granularity_seconds": null,
+    "max_duration_seconds": null
+  },
+  "resources": {
+    "base_url": "http://127.0.0.1:8011",
+    "room_path": "/api/v1/resources/rooms/{room_id}",
+    "token_env": "CAMPUS_RESOURCES_SERVICE_TOKEN",
+    "timeout_seconds": 2.0
+  },
+  "m1": null,
+  "access_management": null,
+  "scan_interval_seconds": 1.0,
+  "operations_per_tick": 10
+}

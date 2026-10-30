@@ -1,0 +1,3 @@
+# C tests use the same versions as the rest of the application.
+-r ../../requirements-dev.txt
+# CPython 3.13 uses C_TEST_DATABASE_URL or the CI PostgreSQL service.

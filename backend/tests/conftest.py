@@ -111,7 +111,7 @@ def clean_db(engine):
             conn.execute(
                 text(
                     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
-                    "AND tablename <> 'alembic_version'"
+                    "AND tablename NOT IN ('alembic_version','c_schema_migrations')"
                 )
             )
             .scalars()

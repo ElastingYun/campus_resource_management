@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,23 @@ class Settings(BaseSettings):
     db_name: str = Field(default="campus", min_length=1)
     db_user: str = Field(default="campus", min_length=1)
     db_password: SecretStr | None = Field(default=None, min_length=1)
+    c_enabled: bool = False
+    c_config_file: Path | None = None
+    resources_service_token: SecretStr | None = Field(default=None, min_length=1)
+    m1_service_token: SecretStr | None = Field(default=None, min_length=1)
+
+    @field_validator("c_config_file", "resources_service_token", "m1_service_token", mode="before")
+    @classmethod
+    def empty_optional_policy_path(cls, value):
+        return None if value == "" else value
+
+    @model_validator(mode="after")
+    def c_requires_explicit_configuration(self):
+        if self.c_enabled and (self.c_config_file is None or not self.database_configured):
+            raise ValueError(
+                "C component requires a policy file and complete database configuration"
+            )
+        return self
 
     @property
     def database_configured(self) -> bool:

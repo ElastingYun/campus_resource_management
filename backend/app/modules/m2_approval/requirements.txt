@@ -1,0 +1,2 @@
+# Compatibility entry point; use the unified runtime lock.
+-r ../../../requirements.txt
